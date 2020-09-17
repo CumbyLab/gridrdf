@@ -1,3 +1,7 @@
+'''
+This subroutine calculates the extend RDF
+'''
+
 
 import sys
 import numpy as np
