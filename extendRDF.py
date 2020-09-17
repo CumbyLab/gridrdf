@@ -38,9 +38,10 @@ def extend_structure(structure, max_dist=10):
     for prim_site in prim_stru.frac_coords:
         prim_sites.append(prim_site / scale_factor + 0.5)
 
-    prim_stru.make_supercell(to_unit_cell=False, scaling_matrix=[  [scale_factor[0], 0, 0],
-                                                                    [0, scale_factor[1], 0],
-                                                                    [0, 0, scale_factor[2]] ] )
+    prim_stru.make_supercell(to_unit_cell=False, 
+                            scaling_matrix=[[scale_factor[0], 0, 0],
+                                            [0, scale_factor[1], 0],
+                                            [0, 0, scale_factor[2]]])
     # the make_supercell method only modifies the given structure 
     # rather than create a new structure
     extend_stru = prim_stru
