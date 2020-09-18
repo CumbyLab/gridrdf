@@ -19,7 +19,7 @@ def extend_structure(structure, max_dist=10):
         prim_cell_list: a list of atom indexes of the centered primtive cell
     '''
     # get primitive structure regardless of the atomic species
-    struct[:] = 'X'
+    #struct[:] = 'X'
     prim_stru = struct.get_primitive_structure()
 
     # extend the structure
