@@ -2,7 +2,8 @@
 import sys
 import numpy as np
 import pprint
-from pymatgen import Structure
+import argparse
+from pymatgen import Structure, Lattice
 
 
 def extend_structure(structure, max_dist=10):
@@ -18,7 +19,8 @@ def extend_structure(structure, max_dist=10):
         extend_stru: extended structure, i.e. the supercell
         prim_cell_list: a list of atom indexes of the centered primtive cell
     '''
-    # get primitive structure regardless of the atomic species
+    # get primitive structure 
+    # to drop the atomic species information, uncomment the following
     #struct[:] = 'X'
     prim_stru = struct.get_primitive_structure()
 
@@ -76,6 +78,29 @@ def get_raw_rdf(structure, prim_cell_list, max_dist=10):
     return sorted(raw_rdf)
 
 
+def get_rdf_and_atoms(structure, prim_cell_list, max_dist=10):
+    '''
+    Get pair distance in the supercell, and the element symbols of the atom pair.  
+    One atoms must be in the selected primtive cell.  
+
+    Args:
+        structure: pymatgen structure, typically a supercell
+        max_dist: cutoff of the atomic pair distance
+        prim_cell_list: index of the atoms of the selected primitive cell
+    Return:
+        A sortted list of atomic pair distance, with atom species
+    '''
+    rdf_atoms = {}
+    for i, site in enumerate(prim_cell_list):
+        rdf_atoms[i] = []
+        site1 = structure[site].species_string
+        for pair_site in structure.get_neighbors(site=structure[site], r=max_dist):
+            site2 = pair_site[0].species_string
+            rdf_atoms[i].append([round(pair_site[1],3), site1, site2])
+        rdf_atoms[i].sort()
+    return rdf_atoms
+
+
 def rdf_one_hot_conversion(raw_rdf, max_dist=10, npoints=100):
     '''
     convert rdf into one-hot encoder
@@ -95,10 +120,42 @@ def rdf_one_hot_conversion(raw_rdf, max_dist=10, npoints=100):
 
 
 if __name__ == '__main__':
+    parse = argparse.ArgumentParser(description='Calculate RDF with atoms')
+    parse.add_argument('--input', type=str, required=False,
+                        help='Input CIF containing the crystal structure')
+    parse.add_argument('--output', type=str, default='rdf_atoms',
+                        help='Output RDF')
+    parse.add_argument('--max_dist', type=float, default=10.0,
+                        help='Cutoff distance of the RDF')
 
-    max_dist = 10
-    # read a structure from cif to a pymatgen structure
-    struct = Structure.from_file(filename='NaCl.cif', primitive=True)
+    args = parse.parse_args()
+    infile = args.input
+    outfile = args.output
+    max_dist = args.max_dist
+
+    if infile:
+        # read a structure from cif to a pymatgen structure
+        struct = Structure.from_file(filename=infile, primitive=True)
+    else:
+        # if a input structure is not provide, the code is in test mode
+        # and nacl structure will be used for test propose
+        nacl = Structure.from_spacegroup('Fm-3m', Lattice.cubic(5.6), 
+                                        ['Na', 'Cl'], [[0.5, 0.5, 0.5], [0, 0, 0]])
+        struct = nacl.get_primitive_structure()
+    
+    prim_cell_list = list(range(len(struct)))
+    rdf_atoms = get_rdf_and_atoms(structure=struct, prim_cell_list=prim_cell_list, 
+                                    max_dist=max_dist)
+
+    with open (outfile, 'w') as f:
+        pprint.pprint(rdf_atoms, f)
+
+
+
+# Blow is old version of the code
+# It seems that pymatgen.Site.get_neighbors method automately create the extend supercell, 
+# so there is no need to extend the cell
+if False:
     # make supercell and find the 'centered' primitive cell
     extend_stru, prim_cell_list = extend_structure(structure=struct, max_dist=max_dist)
     # get RDF as sorted list
@@ -110,6 +167,7 @@ if __name__ == '__main__':
         pprint.pprint(raw_rdf, f)
     with open ('rdf', 'w') as f:
         pprint.pprint(rdf, f)
+
 
 
 
