@@ -3,6 +3,7 @@ import sys
 import numpy as np
 import pprint
 import argparse
+import logging
 from pymatgen import Structure, Lattice
 
 
@@ -119,6 +120,35 @@ def rdf_one_hot_conversion(raw_rdf, max_dist=10, npoints=100):
     return rdf
 
 
+def rdf_histo(rdf_atoms, max_dist=10, bin_size=0.1):
+    '''
+    Convert the raw rdf with atoms to binned frequencies i.e. histogram
+
+    Args:
+        rdf_atoms: pair distance of rdf with atomic speicies (output of get_rdf_and_atoms)
+    Return:
+        Binned rdf frequencies for each shell of neasest neighbor
+    '''
+    # first take out the distance values
+    rdf_dist_list = []
+    rdf_count = []
+    for rdf_atom in rdf_atoms.values():
+        rdf_dist = [ x[0] for x in rdf_atom ]
+        rdf_dist_list.append(rdf_dist)
+        rdf_count.append(len(rdf_dist))
+
+    # make the rdf same length for each atom
+    rdf_len = np.array(rdf_count).min()
+    rdf_trim = [ x[:rdf_len] for x in rdf_dist_list ]
+    rdf_trim = np.array(rdf_trim).transpose()
+
+    bins = np.linspace(start=0, stop=max_dist, num=int(max_dist/bin_size)+1)
+    rdf_bin = []
+    for x in rdf_trim:
+        rdf_bin.append(np.histogram(x, bins=bins, density=False)[0])
+    return np.array(rdf_bin)
+
+
 if __name__ == '__main__':
     parse = argparse.ArgumentParser(description='Calculate RDF with atoms')
     parse.add_argument('--input', type=str, required=False,
@@ -146,10 +176,11 @@ if __name__ == '__main__':
     prim_cell_list = list(range(len(struct)))
     rdf_atoms = get_rdf_and_atoms(structure=struct, prim_cell_list=prim_cell_list, 
                                     max_dist=max_dist)
+    rdf_bin = rdf_histo(rdf_atoms=rdf_atoms, max_dist=max_dist, bin_size=0.1)
 
-    with open (outfile, 'w') as f:
-        pprint.pprint(rdf_atoms, f)
-
+    np.set_printoptions(threshold=sys.maxsize) # print the whole array
+    # transpose the ndarray for import into the plot program
+    np.savetxt(outfile, rdf_bin.transpose(), delimiter=", ",fmt='%i')
 
 
 # Blow is old version of the code
@@ -162,12 +193,12 @@ if False:
     raw_rdf = get_raw_rdf(structure=extend_stru, prim_cell_list=prim_cell_list, max_dist=max_dist)
     rdf = rdf_one_hot_conversion(raw_rdf=raw_rdf, max_dist=10, npoints=100)
 
-    np.set_printoptions(threshold=sys.maxsize) # print the whole array
     with open ('raw_rdf', 'w') as f:
         pprint.pprint(raw_rdf, f)
     with open ('rdf', 'w') as f:
         pprint.pprint(rdf, f)
-
+    with open (outfile, 'w') as f:
+        pprint.pprint(rdf_atoms, f)
 
 
 
