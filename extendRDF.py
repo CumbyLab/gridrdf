@@ -4,6 +4,7 @@ import numpy as np
 import pprint
 import argparse
 import logging
+import itertools 
 from pymatgen import Structure, Lattice
 
 
@@ -83,6 +84,14 @@ def get_rdf_and_atoms(structure, prim_cell_list, max_dist=10):
     '''
     Get pair distance in the supercell, and the element symbols of the atom pair.  
     One atoms must be in the selected primtive cell.  
+    The output dictionary should be like this:  
+    {0: [[1.564, 'Si', 'O'],  # where '0' is the atom number
+        [1.592, 'Si', 'O'],
+        [1.735, 'Si', 'O'],
+        [1.775, 'Si', 'O'],
+        [2.924, 'Si', 'Si'],
+        [3.128, 'Si', 'Si'],
+        [3.148, 'Si', 'Si'], ...... } # list all pair with atom 0 within cutoff
 
     Args:
         structure: pymatgen structure, typically a supercell
@@ -126,34 +135,97 @@ def rdf_histo(rdf_atoms, max_dist=10, bin_size=0.1):
 
     Args:
         rdf_atoms: pair distance of rdf with atomic speicies (output of get_rdf_and_atoms)
+        max_dist: cutoff of the atomic pair distance
+        bin_size: bin size for generating counts
     Return:
         Binned rdf frequencies for each shell of neasest neighbor
     '''
-    # first take out the distance values
-    rdf_dist_list = []
+
+    # get the longest rdf number
     rdf_count = []
     for rdf_atom in rdf_atoms.values():
-        rdf_dist = [ x[0] for x in rdf_atom ]
-        rdf_dist_list.append(rdf_dist)
-        rdf_count.append(len(rdf_dist))
+        rdf_count.append(len(rdf_atom))
+    rdf_len = np.array(rdf_count).max()
 
-    # make the rdf same length for each atom
-    rdf_len = np.array(rdf_count).min()
-    rdf_trim = [ x[:rdf_len] for x in rdf_dist_list ]
-    rdf_trim = np.array(rdf_trim).transpose()
+    # converse the rdf_atom into rdf in each shell,
+    # and only keep the distance values
+    # e.g. rdf_nn_shell[0] contain all the pair distance of the first NN
+    rdf_nn_shells = []
+    for x in range(rdf_len):
+         rdf_nn_shells.append( [line[x][0] 
+                            for line in rdf_atoms.values() 
+                            if len(line) > x] )
 
     bins = np.linspace(start=0, stop=max_dist, num=int(max_dist/bin_size)+1)
-    rdf_bin = []
-    for x in rdf_trim:
-        rdf_bin.append(np.histogram(x, bins=bins, density=False)[0])
+    # np.histogram also return the bin edge, which is not needed
+    # so only the bin counts [0] is kept    
+    rdf_bin = [ np.histogram(x, bins=bins, density=False)[0]
+                for x in rdf_atom_pair_shells ]
     return np.array(rdf_bin)
+
+
+def rdf_stack_histo(rdf_atoms, structure, max_dist=10, bin_size=0.1, bond_direct=False):
+    '''
+    Convert the raw rdf with atoms to binned frequencies i.e. histogram
+    and condsidering different atomic pairs
+
+    Args:
+        rdf_atoms: pair distance of rdf with atomic speicies (output of get_rdf_and_atoms)
+        structure: pymatgen structure
+        max_dist: cutoff of the atomic pair distance
+        bin_size: bin size for generating counts
+        bond_direct: if True, same atom pairs (e.g ['Si','O'] and ['O','Si']) are merged
+    Return:
+        Binned rdf frequencies for each shell of neasest neighbor
+        and a string of ordered atomic pairs
+    '''
+    # get the longest rdf number
+    rdf_count = [ len(x) for x in rdf_atoms.values() ]
+    rdf_len = np.array(rdf_count).max()
+
+    # converse the rdf_atom into rdf in each shell,
+    # i.e. rdf_nn_shell[0] contain all the pair distance of the first NN
+    rdf_nn_shells = []
+    for x in range(rdf_len):
+         rdf_nn_shells.append([ line[x] 
+                            for line in rdf_atoms.values() 
+                            if len(line) > x ])
+
+    # breakdown each rdf_shell to atom pair dependent
+    rdf_atom_pair_shells = []
+    if bond_direct:
+        # get all the atomic pairs
+        atom_pair_list = list(itertools.product(structure.symbol_set, repeat=2))
+        atom_pairs = [ '-'.join(x) for x in atom_pair_list]
+        for rdf_shell in rdf_nn_shells:
+            for atom_pair in atom_pairs:
+                rdf_atom_pair_shells.append([ x[0]
+                                    for x in rdf_shell
+                                    if '-'.join(x[1:]) == atom_pair ])
+    else:
+        atom_pair_list = list(itertools.combinations(structure.symbol_set, r=2)) \
+                        + [ (a,a) for a in structure.symbol_set ]
+        atom_pairs = [ '-'.join(x) for x in atom_pair_list]
+        for rdf_shell in rdf_nn_shells:
+            for atom_pair in atom_pairs:
+                rdf_atom_pair_shells.append([ x[0]
+                                    for x in rdf_shell
+                                    if ( '-'.join(x[1:]) == atom_pair or 
+                                       '-'.join(x[1:][::-1]) == atom_pair ) ])    
+
+    bins = np.linspace(start=0, stop=max_dist, num=int(max_dist/bin_size)+1)
+    # np.histogram also return the bin edge, which is not needed
+    # so only the bin counts [0] is kept    
+    rdf_bin = [ np.histogram(x, bins=bins, density=False)[0]
+                for x in rdf_atom_pair_shells ]
+    return np.array(rdf_bin), atom_pairs
 
 
 if __name__ == '__main__':
     parse = argparse.ArgumentParser(description='Calculate RDF with atoms')
     parse.add_argument('--input', type=str, required=False,
                         help='Input CIF containing the crystal structure')
-    parse.add_argument('--output', type=str, default='rdf_atoms',
+    parse.add_argument('--output', type=str, default='rdf_bin',
                         help='Output RDF')
     parse.add_argument('--max_dist', type=float, default=10.0,
                         help='Cutoff distance of the RDF')
@@ -176,11 +248,14 @@ if __name__ == '__main__':
     prim_cell_list = list(range(len(struct)))
     rdf_atoms = get_rdf_and_atoms(structure=struct, prim_cell_list=prim_cell_list, 
                                     max_dist=max_dist)
-    rdf_bin = rdf_histo(rdf_atoms=rdf_atoms, max_dist=max_dist, bin_size=0.1)
+    #rdf_bin = rdf_histo(rdf_atoms=rdf_atoms, max_dist=max_dist, bin_size=0.1)
+    rdf_bin, atom_pairs = rdf_stack_histo(rdf_atoms=rdf_atoms, structure=struct, 
+                                        max_dist=max_dist, bin_size=0.1)
 
     np.set_printoptions(threshold=sys.maxsize) # print the whole array
     # transpose the ndarray for import into the plot program
-    np.savetxt(outfile, rdf_bin.transpose(), delimiter=", ",fmt='%i')
+    print(atom_pairs)
+    np.savetxt(outfile, rdf_bin.transpose(), delimiter=' ',fmt='%i')
 
 
 # Blow is old version of the code
