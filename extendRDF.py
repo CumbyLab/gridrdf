@@ -140,11 +140,8 @@ def rdf_histo(rdf_atoms, max_dist=10, bin_size=0.1):
     Return:
         Binned rdf frequencies for each shell of neasest neighbor
     '''
-
     # get the longest rdf number
-    rdf_count = []
-    for rdf_atom in rdf_atoms.values():
-        rdf_count.append(len(rdf_atom))
+    rdf_count = [ len(x) for x in rdf_atoms.values() ]
     rdf_len = np.array(rdf_count).max()
 
     # converse the rdf_atom into rdf in each shell,
@@ -160,7 +157,7 @@ def rdf_histo(rdf_atoms, max_dist=10, bin_size=0.1):
     # np.histogram also return the bin edge, which is not needed
     # so only the bin counts [0] is kept    
     rdf_bin = [ np.histogram(x, bins=bins, density=False)[0]
-                for x in rdf_atom_pair_shells ]
+                for x in rdf_nn_shells ]
     return np.array(rdf_bin)
 
 
@@ -179,6 +176,8 @@ def rdf_stack_histo(rdf_atoms, structure, max_dist=10, bin_size=0.1, bond_direct
         Binned rdf frequencies for each shell of neasest neighbor
         and a string of ordered atomic pairs
     '''
+
+
     # get the longest rdf number
     rdf_count = [ len(x) for x in rdf_atoms.values() ]
     rdf_len = np.array(rdf_count).max()
@@ -196,29 +195,27 @@ def rdf_stack_histo(rdf_atoms, structure, max_dist=10, bin_size=0.1, bond_direct
     if bond_direct:
         # get all the atomic pairs
         atom_pair_list = list(itertools.product(structure.symbol_set, repeat=2))
-        atom_pairs = [ '-'.join(x) for x in atom_pair_list]
         for rdf_shell in rdf_nn_shells:
-            for atom_pair in atom_pairs:
+            for atom_pair in atom_pair_list:
                 rdf_atom_pair_shells.append([ x[0]
-                                    for x in rdf_shell
-                                    if '-'.join(x[1:]) == atom_pair ])
+                                            for x in rdf_shell
+                                            if x[1:] == list(atom_pair) ])
     else:
         atom_pair_list = list(itertools.combinations(structure.symbol_set, r=2)) \
                         + [ (a,a) for a in structure.symbol_set ]
-        atom_pairs = [ '-'.join(x) for x in atom_pair_list]
         for rdf_shell in rdf_nn_shells:
-            for atom_pair in atom_pairs:
+            for atom_pair in atom_pair_list:
                 rdf_atom_pair_shells.append([ x[0]
-                                    for x in rdf_shell
-                                    if ( '-'.join(x[1:]) == atom_pair or 
-                                       '-'.join(x[1:][::-1]) == atom_pair ) ])    
+                                            for x in rdf_shell
+                                            if (x[1:] == list(atom_pair) or 
+                                                x[1:][::-1] == list(atom_pair)) ])    
 
     bins = np.linspace(start=0, stop=max_dist, num=int(max_dist/bin_size)+1)
     # np.histogram also return the bin edge, which is not needed
     # so only the bin counts [0] is kept    
     rdf_bin = [ np.histogram(x, bins=bins, density=False)[0]
                 for x in rdf_atom_pair_shells ]
-    return np.array(rdf_bin), atom_pairs
+    return np.array(rdf_bin), atom_pair_list
 
 
 if __name__ == '__main__':
@@ -255,7 +252,7 @@ if __name__ == '__main__':
     np.set_printoptions(threshold=sys.maxsize) # print the whole array
     # transpose the ndarray for import into the plot program
     print(atom_pairs)
-    np.savetxt(outfile, rdf_bin.transpose(), delimiter=' ',fmt='%i')
+    np.savetxt(outfile, rdf_bin.transpose(), delimiter=" ",fmt='%i')
 
 
 # Blow is old version of the code
@@ -270,10 +267,7 @@ if False:
 
     with open ('raw_rdf', 'w') as f:
         pprint.pprint(raw_rdf, f)
-    with open ('rdf', 'w') as f:
-        pprint.pprint(rdf, f)
-    with open (outfile, 'w') as f:
-        pprint.pprint(rdf_atoms, f)
+ 
 
 
 
