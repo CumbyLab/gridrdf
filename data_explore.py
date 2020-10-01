@@ -67,4 +67,4 @@ if __name__ == '__main__':
 
     batch_rdf(data)
     #result = struct_complex(data=data)
-    #np.savetxt(outfile, result, delimiter=" ",fmt='%.3f')
+    #np.savetxt(outfile, result, delimiter=' ',fmt='%.3f')
