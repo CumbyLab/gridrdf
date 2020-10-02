@@ -51,10 +51,44 @@ def batch_rdf(data, max_dist=10):
     return
 
 
+def num_of_shells(data, dir):
+    '''
+    Calculate the number of nearest neighbor shells in RDF for each compound
+
+    Args:
+        data: the bulk modulus data and structure from Materials Project
+        dir: the dir contains the calculated RDFs
+    Return:
+        a list of id, number of shells, bulk modulus and number of atoms
+    '''
+    for d in data:
+        struct = Structure.from_str(d['cif'], fmt='cif')
+        len(struct)
+        outfile = d['task_id']
+    return
+
+
+def rdf_value_stat(data, dir):
+    '''
+    Remove all the 0 values in all RDF and put all other values in one list.  
+    To get a statistics intuition of the RDF values distribution histogram.
+
+    Args:
+        dir: the dir contains the calculated RDFs
+    Return:
+        a list of all non-zero RDF values
+    '''
+    for d in data:
+        struct = Structure.from_str(d['cif'], fmt='cif')
+        len(struct)
+        outfile = d['task_id']
+    return
+
+
 if __name__ == '__main__':
     parse = argparse.ArgumentParser(description='Data explore')
     parse.add_argument('--input', type=str, default='bulk_modulus_cif.json',
-                        help='')
+                        help='the bulk modulus and structure from Materials Project')
     parse.add_argument('--output', type=str, default='results',
                         help='Output results')
 
@@ -68,3 +102,4 @@ if __name__ == '__main__':
     batch_rdf(data)
     #result = struct_complex(data=data)
     #np.savetxt(outfile, result, delimiter=' ',fmt='%.3f')
+

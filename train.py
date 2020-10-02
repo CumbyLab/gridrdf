@@ -9,7 +9,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn import metrics
-from sklearn.learning_curve import learning_curve, validation_curve
+from sklearn.model_selection import learning_curve, GridSearchCV
 
 
 def read_and_trim_rdf(x_dir):
@@ -51,28 +51,44 @@ if __name__ == '__main__':
 
     # prepare the dataset and split to train and test
     X_data = read_and_trim_rdf(x_dir)
+    print(X_data.shape)
     with open (y_file,'r') as f:
         d = json.load(f)
     y_data = np.array([ x['elasticity.K_Voigt'] for x in d ])
     X_train, X_test, y_train, y_test = \
         train_test_split(X_data, y_data, test_size=0.2, random_state=1) 
 
-    #
-    pipe_krr = Pipeline([ ('scl', StandardScaler()),
-                          ('krr', KernelRidge(alpha=1.0)), ])
+    # grid search meta parameters
+    grid_search_para = True
+    if grid_search_para:
+        kr = GridSearchCV( KernelRidge(kernel='linear'),
+                            scoring='neg_mean_absolute_error',
+                            param_grid={"alpha": [1e0, 0.1, 1e-2, 1e-3]} )
+        kr = kr.fit(X_train, y_train)
+        print(kr.best_score_ , kr.best_params_)
+        print(kr.cv_results_)
 
-    train_sizes, train_scores, test_scores = \
-        learning_curve(estimator=pipe_krr, X=X_train, y=y_train, 
-                        train_sizes=np.linspace(0.1, 1.0, 2),
-                        cv=10, n_jobs=1)
 
-    train_mean = np.mean(train_scores, axis=1)
-    train_std = np.std(train_scores, axis=1)
-    test_mean = np.mean(test_scores, axis=1)
-    test_std = np.std(test_scores, axis=1)
+    # get the learning curve
+    calc_learning_curve = False
+    if calc_learning_curve:
+        pipe_krr = Pipeline([ #('scl', StandardScaler()),
+                            ('krr', KernelRidge(alpha=1.0)), ])
 
-    learning_curve_results = np.stack(train_mean, train_std, test_mean, test_std)
-    np.savetxt(outfile, learning_curve_results, delimiter=' ', fmt='%.3f')
+        train_sizes, train_scores, test_scores = \
+            learning_curve(estimator=pipe_krr, X=X_train, y=y_train, 
+                            train_sizes=np.linspace(0.1, 1.0, 10),
+                            scoring='neg_mean_absolute_error',
+                            cv=10, n_jobs=1)
+
+        train_mean = np.mean(train_scores, axis=1)
+        train_std = np.std(train_scores, axis=1)
+        test_mean = np.mean(test_scores, axis=1)
+        test_std = np.std(test_scores, axis=1)
+
+        learning_curve_results = np.stack([ train_mean, train_std, test_mean, test_std ])
+        learning_curve_results = learning_curve_results.transpose()
+        np.savetxt(outfile, learning_curve_results, delimiter=' ', fmt='%.3f')
 
 
     if False:
@@ -81,4 +97,6 @@ if __name__ == '__main__':
         clf.fit(X_train, y_train)
         y_pred = clf.predict(X_test)
         print(metrics.mean_absolute_error(y_test, y_pred))
+
+
 
