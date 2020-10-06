@@ -31,12 +31,13 @@ def struct_complex(data):
     return np.array(result)
 
 
-def batch_rdf(data, max_dist=10):
+def batch_rdf(data, max_dist=10, normalize=True):
     '''
     Read structures and output the extend RDF
 
     Args:
         data: input data
+        normalize: RDF dividing the number of atoms per unit cell
     Return:
 
     '''
@@ -46,6 +47,8 @@ def batch_rdf(data, max_dist=10):
         rdf_atoms = get_rdf_and_atoms(structure=struct, prim_cell_list=prim_cell_list, 
                                         max_dist=max_dist)
         rdf_bin = rdf_histo(rdf_atoms=rdf_atoms, max_dist=max_dist, bin_size=0.1)
+        if normalize:
+            rdf_bin = rdf_bin / len(struct)
         outfile = d['task_id']
         np.savetxt(outfile, rdf_bin, delimiter=',', fmt='%i')
     return
