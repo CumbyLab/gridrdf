@@ -36,7 +36,7 @@ def batch_rdf(data, max_dist=10, normalize=True):
     Read structures and output the extend RDF
 
     Args:
-        data: input data
+        data: input data from Materials Project
         normalize: RDF dividing the number of atoms per unit cell
     Return:
 
@@ -50,7 +50,7 @@ def batch_rdf(data, max_dist=10, normalize=True):
         if normalize:
             rdf_bin = rdf_bin / len(struct)
         outfile = d['task_id']
-        np.savetxt(outfile, rdf_bin, delimiter=',', fmt='%i')
+        np.savetxt(outfile, rdf_bin, delimiter=' ', fmt='%i')
     return
 
 

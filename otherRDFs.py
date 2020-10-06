@@ -3,11 +3,12 @@ Other types of RDF as benchmark to the extend RDF
 '''
 
 import numpy as np
+from pymatgen import Structure
 from matminer.featurizers.structure import RadialDistributionFunction
 from matminer.featurizers.utils.grdf import Histogram as PartialRDF
 
 
-def origin_rdf_histo(structures, max_dist=10, bin_size=0.1):
+def origin_rdf_histo(data, max_dist=10, bin_size=0.1):
     '''
     Calcualte the vanilla RDF using matminer.  
     BEWARE! In the implementation of RDF in matminer, the endpoint
@@ -16,19 +17,17 @@ def origin_rdf_histo(structures, max_dist=10, bin_size=0.1):
     shorter than the extend RDF.
     
     Args:
-        structures: a list of pymatgen structures
+        data: input data from Materials Project
     Return:
-        a ndarray with dimension [x,y], x is number of compounds i.e. 
-        the length of the input list, y is the number of histogram 
-        points of RDF
+
     '''
     rdf_fn = RadialDistributionFunction(cutoff=max_dist, bin_size=bin_size)
-    results = rdf_fn.featurize_many(structures)
-
-    rdfs = []
-    for result in results:
-        rdfs.append(result[0]['distribution'])
-    return np.stack(rdfs)
+    for d in data:
+        struct = Structure.from_str(d['cif'], fmt='cif')
+        rdf_bin = rdf_fn.featurize(struct)[0]['distribution']
+        outfile = d['task_id']
+        np.savetxt(outfile, rdf_bin, delimiter=' ', fmt='%.3f')
+    return
 
 
 def partial_rdf():
