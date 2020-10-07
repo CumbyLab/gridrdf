@@ -89,8 +89,8 @@ if __name__ == '__main__':
     X_data = read_and_trim_rdf(x_dir, trim=trim, make_1d=make_1d)
 
     with open (y_file,'r') as f:
-        d = json.load(f)
-    y_data = np.array([ x['elasticity.K_Voigt'] for x in d ])
+        data = json.load(f)
+    y_data = np.array([ x['elasticity.K_Voigt'] for x in data ])
     X_train, X_test, y_train, y_test = \
         train_test_split(X_data, y_data, test_size=0.2, random_state=1) 
 

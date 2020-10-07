@@ -4,9 +4,11 @@ Other types of RDF as benchmark to the extend RDF
 
 import numpy as np
 from pymatgen import Structure
-from matminer.featurizers.structure import RadialDistributionFunction
-from matminer.featurizers.utils.grdf import Histogram as PartialRDF
-
+try:
+    from matminer.featurizers.structure import RadialDistributionFunction
+    from matminer.featurizers.utils.grdf import Histogram as PartialRDF
+except:
+    print('matminer is not installed, cannot calculate original RDF')
 
 def origin_rdf_histo(data, max_dist=10, bin_size=0.1):
     '''

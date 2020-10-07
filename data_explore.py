@@ -77,13 +77,14 @@ def num_of_shells(data, dir):
         data: the bulk modulus data and structure from Materials Project
         dir: the dir contains the calculated RDFs
     Return:
-        a list of id, number of shells, bulk modulus and number of atoms
+        a list of number of shells, bulk modulus and number of atoms
     '''
+    results = []
     for d in data:
         struct = Structure.from_str(d['cif'], fmt='cif')
-        len(struct)
-        outfile = d['task_id']
-    return
+        num_shell = sum(1 for line in open(dir + '/' + d['task_id']))
+        results.append(np.array([num_shell, d['elasticity.K_Voigt'], len(struct)]))
+    return np.stack(results)
 
 
 def rdf_value_stat(data, dir):
@@ -107,6 +108,8 @@ if __name__ == '__main__':
     parse = argparse.ArgumentParser(description='Data explore')
     parse.add_argument('--input', type=str, default='bulk_modulus_cif.json',
                         help='the bulk modulus and structure from Materials Project')
+    parse.add_argument('--rdf_dir', type=str, default='./',
+                        help='dir has all the rdf files')
     parse.add_argument('--output', type=str, default='results',
                         help='Output results')
     parse.add_argument('--max_dist', type=float, default=10.0,
@@ -116,12 +119,15 @@ if __name__ == '__main__':
     infile = args.input
     outfile = args.output
     max_dist = args.max_dist
+    rdf_dir = args.rdf_dir
 
     with open(infile,'r') as f:
         data = json.load(f)
 
-    origin_rdf_histo(data, max_dist=max_dist=)
-    batch_rdf(data, max_dist=max_dist)
-    #result = struct_complex(data=data)
-    #np.savetxt(outfile, result, delimiter=' ',fmt='%.3f')
+    results = num_of_shells(data=data, dir=rdf_dir)
+    np.savetxt(outfile, results, delimiter=' ',fmt='%.3f')
+
+    #origin_rdf_histo(data, max_dist=max_dist)
+    #batch_rdf(data, max_dist=max_dist)
+    #results = struct_complex(data=data)
 
