@@ -30,7 +30,7 @@ def read_and_trim_rdf(x_dir, trim=True, make_1d=True):
     all_rdf = []
     rdf_len = []
     for rdf_file in os.listdir(x_dir):
-        rdf = np.loadtxt(rdf_file, delimiter=',')
+        rdf = np.loadtxt(rdf_file, delimiter=' ')
         all_rdf.append(rdf)
         rdf_len.append(len(rdf))
 
@@ -74,7 +74,6 @@ if __name__ == '__main__':
     parser.add_argument('--no-learning_curve', dest='learning_curve', action='store_false')
     parser.set_defaults(learning_curve=False)
 
-
     args = parser.parse_args()
     x_dir = args.xdir
     y_file = args.yfile
@@ -97,9 +96,15 @@ if __name__ == '__main__':
 
     # grid search meta parameters
     if grid_search_para:
-        kr = GridSearchCV( KernelRidge(kernel='linear'),
+        kr = GridSearchCV( KernelRidge(),
                             scoring='neg_mean_absolute_error',
-                            param_grid={"alpha": [1e0, 0.1, 1e-2, 1e-3]} )
+                            param_grid=[ {'kernel': ['rbf'],
+                                            'alpha': [1e0, 0.1, 1e-2, 1e-3],
+                                            'gamma': np.logspace(-2, 2, 5)},
+                                            {'kernel': ['linear'],
+                                            'alpha': [1e0, 0.1, 1e-2, 1e-3]},
+                                        ] )
+
         kr = kr.fit(X_train, y_train)
         print(kr.best_score_ , kr.best_params_)
         print(kr.cv_results_)

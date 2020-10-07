@@ -26,7 +26,7 @@ def origin_rdf_histo(data, max_dist=10, bin_size=0.1):
         struct = Structure.from_str(d['cif'], fmt='cif')
         rdf_bin = rdf_fn.featurize(struct)[0]['distribution']
         outfile = d['task_id']
-        np.savetxt(outfile, rdf_bin, delimiter=',', fmt='%.3f')
+        np.savetxt(outfile, rdf_bin, delimiter=' ', fmt='%.3f')
     return
 
 

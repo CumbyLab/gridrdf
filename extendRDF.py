@@ -252,7 +252,7 @@ if __name__ == '__main__':
     np.set_printoptions(threshold=sys.maxsize) # print the whole array
     # transpose the ndarray for import into the plot program
     print(atom_pairs)
-    np.savetxt(outfile, rdf_bin.transpose(), delimiter=" ",fmt='%i')
+    np.savetxt(outfile, rdf_bin.transpose(), delimiter=' ',fmt='%i')
 
 
 # Blow is old version of the code
