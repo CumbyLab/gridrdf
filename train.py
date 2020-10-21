@@ -5,6 +5,8 @@ import json
 import argparse
 import numpy as np
 from sklearn.kernel_ridge import KernelRidge
+from sklearn.linear_model import Lasso
+from sklearn.svm import SVR
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
@@ -12,12 +14,13 @@ from sklearn import metrics
 from sklearn.model_selection import learning_curve, GridSearchCV
 
 
-def read_and_trim_rdf(x_dir, trim=True, make_1d=True):
+def read_and_trim_rdf(data, x_dir, trim=True, make_1d=True):
     '''
     Read the rdf files and trim them to the same length  
     for kernel methods training
 
     Args:
+        data: modulus data from materials project
         x_dir: the dir has all (and only) the rdf files
         trim: set to False if the RDF already have the same length, 
             or not necessary to make them the same length
@@ -29,7 +32,8 @@ def read_and_trim_rdf(x_dir, trim=True, make_1d=True):
     '''
     all_rdf = []
     rdf_len = []
-    for rdf_file in os.listdir(x_dir):
+    for d in data:
+        rdf_file = data['task_id']
         rdf = np.loadtxt(rdf_file, delimiter=' ')
         all_rdf.append(rdf)
         rdf_len.append(len(rdf))
@@ -86,13 +90,25 @@ if __name__ == '__main__':
     outfile = args.output
 
     # prepare the dataset and split to train and test
-    X_data = read_and_trim_rdf(x_dir, trim=trim, make_1d=make_1d)
 
     with open (y_file,'r') as f:
         data = json.load(f)
-    y_data = np.array([ x['elasticity.K_Voigt'] for x in data ])
-    X_train, X_test, y_train, y_test = \
-        train_test_split(X_data, y_data, test_size=0.2, random_state=1) 
+    X_data = read_and_trim_rdf(data, x_dir, trim=trim, make_1d=make_1d)
+    y_data = np.array([ x['elasticity.K_VRH'] for x in data ])
+
+    y_data = np.log10(y_data)
+    if True:
+        for test_size in np.linspace(0.1, 1.0, 10):
+            X_train, X_test, y_train, y_test = \
+                train_test_split(X_data, y_data, test_size=test_size, random_state=1) 
+
+            clf = KernelRidge(alpha=1.0)
+            clf = SVR(kernel='linear')
+            clf = Lasso()
+
+            clf.fit(X_train, y_train)
+            y_pred = clf.predict(X_test)
+            print(metrics.mean_absolute_error(y_test, y_pred))
 
     # grid search meta parameters
     if grid_search_para:
@@ -111,11 +127,11 @@ if __name__ == '__main__':
 
     # get the learning curve
     if calc_learning_curve:
-        pipe_krr = Pipeline([ #('scl', StandardScaler()),
+        pipe = Pipeline([ #('scl', StandardScaler()),
                             ('krr', KernelRidge(alpha=1.0)), ])
 
         train_sizes, train_scores, test_scores = \
-            learning_curve(estimator=pipe_krr, X=X_train, y=y_train, 
+            learning_curve(estimator=pipe, X=X_train, y=y_train, 
                             train_sizes=np.linspace(0.1, 1.0, 10),
                             scoring='neg_mean_absolute_error',
                             cv=10, n_jobs=1)
@@ -130,12 +146,7 @@ if __name__ == '__main__':
         np.savetxt(outfile, learning_curve_results, delimiter=' ', fmt='%.3f')
 
 
-    if False:
-        # this is the original fitting, no longer use
-        clf = KernelRidge(alpha=1.0)
-        clf.fit(X_train, y_train)
-        y_pred = clf.predict(X_test)
-        print(metrics.mean_absolute_error(y_test, y_pred))
+
 
 
 

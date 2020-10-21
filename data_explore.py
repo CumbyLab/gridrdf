@@ -79,11 +79,14 @@ def num_of_shells(data, dir):
     Return:
         a list of number of shells, bulk modulus and number of atoms
     '''
+    sc = StructuralComplexity()
     results = []
     for d in data:
         struct = Structure.from_str(d['cif'], fmt='cif')
+        complex_atom, complex_cell = sc.featurize(struct)
         num_shell = sum(1 for line in open(dir + '/' + d['task_id']))
-        results.append(np.array([num_shell, d['elasticity.K_Voigt'], len(struct)]))
+        results.append(np.array([ d['elasticity.K_Voigt'], num_shell, struct.density, 
+                                    len(struct), complex_atom]) )
     return np.stack(results)
 
 
