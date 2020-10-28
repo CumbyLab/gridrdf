@@ -5,6 +5,7 @@ import time
 import gzip
 import argparse
 from pymatgen import Structure
+from sklearn.preprocessing import MultiLabelBinarizer
 try:
     from matminer.featurizers.structure import StructuralComplexity
 except:
@@ -85,7 +86,8 @@ def num_of_shells(data, dir):
         struct = Structure.from_str(d['cif'], fmt='cif')
         complex_atom, complex_cell = sc.featurize(struct)
         num_shell = sum(1 for line in open(dir + '/' + d['task_id']))
-        results.append(np.array([ d['elasticity.K_Voigt'], num_shell, struct.density, 
+        results.append(np.array([ d['elasticity.K_Voigt'], num_shell, 
+                                    struct.volume/len(struct), struct.density, 
                                     len(struct), complex_atom]) )
     return np.stack(results)
 
@@ -107,13 +109,36 @@ def rdf_value_stat(data, dir):
     return
 
 
+def compoisition_one_hot(data, only_type=False):
+    '''
+    Make the the composition one hot array
+
+    Args:
+        data: the bulk modulus data and structure from Materials Project
+        only_type: if true, only the types are included but not  
+            the number of the sites
+    Return:
+        one hot reprentation in atomic array
+    '''
+    mlb = MultiLabelBinarizer()
+    pero_tab_nums = []
+    for d in data:
+        struct = Structure.from_str(d['cif'], fmt='cif')
+        if only_type:
+            species = struct.types_of_specie
+        else:
+            species = struct.species
+        pero_tab_nums.append([ x.number for x in species ])
+    return mlb.fit_transform(pero_tab_nums)
+
+
 if __name__ == '__main__':
     parse = argparse.ArgumentParser(description='Data explore')
-    parse.add_argument('--input', type=str, default='bulk_modulus_cif.json',
+    parse.add_argument('--input', type=str, default='../bulk_modulus_cif.json',
                         help='the bulk modulus and structure from Materials Project')
     parse.add_argument('--rdf_dir', type=str, default='./',
                         help='dir has all the rdf files')
-    parse.add_argument('--output', type=str, default='results',
+    parse.add_argument('--output', type=str, default='../results',
                         help='Output results')
     parse.add_argument('--max_dist', type=float, default=10.0,
                         help='Cutoff distance of the RDF')
