@@ -1,10 +1,13 @@
 
 import numpy as np
+import pandas as pd
 import json
 import time
 import gzip
 import argparse
+from collections import Counter
 from pymatgen import Structure
+from pymatgen.core.periodic_table import Element
 from sklearn.preprocessing import MultiLabelBinarizer
 try:
     from matminer.featurizers.structure import StructuralComplexity
@@ -109,27 +112,47 @@ def rdf_value_stat(data, dir):
     return
 
 
-def compoisition_one_hot(data, only_type=False):
+def composition_one_hot(data, only_type=False, normalize=True):
     '''
-    Make the the composition one hot array
+    Make the composition to fix size vector like one hot array
 
     Args:
         data: the bulk modulus data and structure from Materials Project
         only_type: if true, only the types are included but not  
-            the number of the sites
+            the whole formula
+        normalize: if normalize, the number of atoms in the output will 
+            be given as percentage
     Return:
-        one hot reprentation in atomic array
+        1. one hot reprentation in atomic array
+        2. the order of the elements in the list
     '''
-    mlb = MultiLabelBinarizer()
     pero_tab_nums = []
-    for d in data:
-        struct = Structure.from_str(d['cif'], fmt='cif')
-        if only_type:
+    if only_type:
+        mlb = MultiLabelBinarizer()
+        for d in data:
+            struct = Structure.from_str(d['cif'], fmt='cif')
             species = struct.types_of_specie
-        else:
+            pero_tab_nums.append([ x.number for x in species ])
+        #
+        data_np = mlb.fit_transform(pero_tab_nums)
+        elem_numbers = mlb.classes_.tolist()
+        elem_symbols = [ Element.from_Z(x).name for x in elem_numbers ]
+        return data_np, elem_symbols
+    else:
+        for d in data:
+            struct = Structure.from_str(d['cif'], fmt='cif')
             species = struct.species
-        pero_tab_nums.append([ x.number for x in species ])
-    return mlb.fit_transform(pero_tab_nums)
+            pero_tab_nums.append([ x.number for x in species ])
+        # use the counter method to one-hot the element numbers
+        data_pd = pd.DataFrame([Counter(x) for x in pero_tab_nums])
+        data_np = data_pd.fillna(0).sort_index(axis=1).to_numpy()
+        if normalize:
+            data_np = data_np/data_np.sum(axis=1, keepdims=True)
+
+        # get the order of elements in the list and element symbols
+        elem_numbers = data_pd.sort_index(axis=1).columns.tolist()
+        elem_symbols = [ Element.from_Z(x).name for x in elem_numbers ]
+        return np.ndarray.round(data_np, 3), elem_symbols
 
 
 if __name__ == '__main__':
