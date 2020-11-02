@@ -6,6 +6,7 @@ import argparse
 import logging
 import itertools 
 from pymatgen import Structure, Lattice
+from sklearn.neighbors import KernelDensity
 
 
 def extend_structure(structure, max_dist=10):
@@ -176,8 +177,6 @@ def rdf_stack_histo(rdf_atoms, structure, max_dist=10, bin_size=0.1, bond_direct
         Binned rdf frequencies for each shell of neasest neighbor
         and a string of ordered atomic pairs
     '''
-
-
     # get the longest rdf number
     rdf_count = [ len(x) for x in rdf_atoms.values() ]
     rdf_len = np.array(rdf_count).max()
@@ -216,6 +215,42 @@ def rdf_stack_histo(rdf_atoms, structure, max_dist=10, bin_size=0.1, bond_direct
     rdf_bin = [ np.histogram(x, bins=bins, density=False)[0]
                 for x in rdf_atom_pair_shells ]
     return np.array(rdf_bin), atom_pair_list
+
+
+def rdf_kde(rdf_atoms, max_dist=10, bin_size=0.1):
+    '''
+    Convert the raw rdf with atoms to binned frequencies with Gaussian smearing
+
+    Args:
+        rdf_atoms: pair distance of rdf with atomic speicies (output of get_rdf_and_atoms)
+        max_dist: cutoff of the atomic pair distance
+        bin_size: bin size for generating counts
+    Return:
+        Gaussian smeared rdf frequencies for each shell of neasest neighbor
+    '''
+    # get the longest rdf number
+    rdf_count = [ len(x) for x in rdf_atoms.values() ]
+    rdf_len = np.array(rdf_count).max()
+
+    # converse the rdf_atom into rdf in each shell,
+    # and only keep the distance values
+    # e.g. rdf_nn_shell[0] contain all the pair distance of the first NN
+    rdf_nn_shells = []
+    for x in range(rdf_len):
+         rdf_nn_shells.append( [line[x][0] 
+                            for line in rdf_atoms.values() 
+                            if len(line) > x] )
+
+    # the kernel density method need a 2d input, so add a new axis
+    bins = np.linspace(start=0, stop=max_dist, num=int(max_dist/bin_size)+1)[:, np.newaxis]
+
+    rdf_bin = []
+    kde = KernelDensity(kernel='gaussian', bandwidth=bin_size)
+    for x in rdf_nn_shells:
+        log_dens = kde.fit(np.array(x)[:, np.newaxis]).score_samples(bins)
+        rdf_bin.append(np.exp(log_dens))
+
+    return np.array(rdf_bin)
 
 
 if __name__ == '__main__':
