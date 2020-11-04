@@ -68,30 +68,35 @@ def read_and_trim_rdf(data, x_dir, trim=100):
     return np.stack(all_rdf)
 
 
-def krr_grid_search(X_train, y_train, alpha, gamma):
+def krr_grid_search(alpha, gamma, X_data, y_data, test_size=0.2):
     kr = GridSearchCV( KernelRidge(),
                     scoring='neg_mean_absolute_error',
                     param_grid=[{'kernel': ['rbf'], 'alpha': alpha, 'gamma': gamma},
                                 {'kernel': ['linear'], 'alpha': alpha}]
                      )
+    X_train, X_test, y_train, y_test = \
+        train_test_split(X_data, y_data, test_size=test_size, random_state=1) 
     kr = kr.fit(X_train, y_train)
     return kr.best_score_ , kr.best_params_, kr.cv_results_
 
 
-def svr_grid_search(X_train, y_train, gamma, C):
+def svr_grid_search(gamma, C, X_data, y_data, test_size=0.2):
     svr = GridSearchCV( SVR(),
                     scoring='neg_mean_absolute_error',
                     param_grid=[{'kernel': ['rbf'], 'gamma': gamma, 'C': C},
                                 {'kernel': ['linear'], 'C': C}]
                       )
+    X_train, X_test, y_train, y_test = \
+        train_test_split(X_data, y_data, test_size=test_size, random_state=1) 
     svr = svr.fit(X_train, y_train)
     return svr.best_score_ , svr.best_params_ #, svr.cv_results_
 
 
-def calc_learning_curve(funct, X_train, y_train):
+def calc_learning_curve(funct, X_data, y_data, test_size=0.2):
+    X_train, X_test, y_train, y_test = \
+        train_test_split(X_data, y_data, test_size=test_size, random_state=1)
     pipe = Pipeline([ #('scl', StandardScaler()),
-                    ('krr', funct), ])
-
+                ('krr', funct), ])
     train_sizes, train_scores, test_scores = \
         learning_curve(estimator=pipe, X=X_train, y=y_train, 
                         train_sizes=np.linspace(0.1, 1.0, 10),
@@ -108,8 +113,14 @@ def calc_learning_curve(funct, X_train, y_train):
     np.savetxt('../learning_curve', learning_curve_results, delimiter=' ', fmt='%.3f')
 
 
-def calc_obs_vs_pred(funct, X_train, X_test, y_train, y_test):
-    test_size = round( len(X_test) / (len(X_train) + len(X_test) ), 3)
+def calc_obs_vs_pred(funct, X_data, y_data, test_size):
+    '''
+    The observation vs prediction plot
+    '''
+    X_train, X_test, y_train, y_test = \
+            train_test_split(X_data, y_data, test_size=test_size, random_state=1)
+    funct.fit(X_train, y_train)
+    y_pred = funct.predict(X_test)
     y_pred_train = funct.predict(X_train)
     np.savetxt('../test.' + str(test_size), 
                 np.stack([y_test, y_pred]).transpose(), 
@@ -120,6 +131,9 @@ def calc_obs_vs_pred(funct, X_train, X_test, y_train, y_test):
 
 
 def int_or_str(value):
+    '''
+    For augment parser trim, where input can be either integer or string
+    '''
     try:
         return int(value)
     except:
@@ -128,93 +142,114 @@ def int_or_str(value):
 
 if __name__ == '__main__':
     # input parameters
-    parser = argparse.ArgumentParser(description='Train machine learning algorithm')
+    parser = argparse.ArgumentParser(description='Train machine learning algorithm',
+                                    formatter_class=argparse.RawTextHelpFormatter)
 
     # input files of the training dataset
     parser.add_argument('--xdir', type=str, default='./',
                         help='All the rdf files for training')
     parser.add_argument('--yfile', type=str, default='../MP_modulus.json',
-                        help='bulk modulus values as target')
+                        help='files contain target data')
     parser.add_argument('--funct', type=str, default='krr',
-                        help='''which function is used, currently support krr(Kernel Ridge Regression)
-                        svm(Support Vector Machine), rf(random forest), lasso''')
+                        help='which function is used, currently support: \n' +
+                            '   krr(Kernel Ridge Regression) \n' +
+                            '   svm(Support Vector Machine) \n' +
+                            '   rf(random forest) \n' +
+                            '   lasso'
+                        )
     parser.add_argument('--target', type=str, default='composition',
-                        help='''which properteis as target, currently support bulk_modulus,
-                        shear_modulus, density, composition''')
+                        help='which properteis as target, currently support: \n' +
+                            '   bulk_modulus \n' +
+                            '   shear_modulus \n' +
+                            '   density \n' +
+                            '   formula: percentage of elements in each compound \n' +
+                            '   composition: which types of elements in each compound \n' +
+                            '   volume_per_atom \n' +
+                            '   number_of_atoms: in the unit cell \n' +
+                            '   type_of_elements: in the unit cell '
+                        )
+    parser.add_argument('--output', type=str, default='test_size_depend',
+                        help='one of the following: \n'+
+                            '   test_size_depend: change the test size from 0.1 to 0.9 \n' +
+                            '   obs_vs_pred: plot the observation vs prediction results for \n' +
+                            '       training and test set respectively, observation go first \n' +
+                            '   grid_search: cross validation grid search for meta parameters \n' +
+                            '   learning_curve: the calculated learning curve will be stored \n' +
+                            '       in ../learning_curve'
+                        )
 
     # parameters for rdf preprocessing
     parser.add_argument('--trim', type=str, default='minimum',
                         help='the number of shells for RDF')
 
-    # parameters for the training process
-    parser.add_argument('--test_size_depend', dest='test_size_depend', action='store_true',
-                        help='change the test size from 0.1 to 0.9')
-    parser.set_defaults(test_size_depend=False)
-    parser.add_argument('--obs_vs_pred', dest='obs_vs_pred', action='store_true',
-                        help='''plot the observation vs prediction results for training
-                        and test set respectively, observation go first ''')
-    parser.set_defaults(obs_vs_pred=False)
-    parser.add_argument('--grid_search', dest='grid_search', action='store_true', 
-                        help='perform cross validation grid search for meta parameters')
-    parser.set_defaults(grid_search=False)
-    parser.add_argument('--learning_curve', dest='learning_curve', action='store_true', 
-                        help='the calculated learning curve will be stored in ../learning_curve')
-    parser.set_defaults(learning_curve=False)
-    
     args = parser.parse_args()
     x_dir = args.xdir
     y_file = args.yfile
     target = args.target
     funct_name = args.funct
+    output = args.output
     trim = int_or_str(args.trim) 
-
-    grid_search = args.grid_search
-    learning_curve = args.learning_curve
-    obs_vs_pred = args.obs_vs_pred
-    test_size_depend = args.test_size_depend
 
     # prepare the dataset and split to train and test
     with open (y_file,'r') as f:
         data = json.load(f)
     X_data = read_and_trim_rdf(data, x_dir, trim=trim)
 
-    # specify the target 
+    # target_type can be continuous categorical ordinal
+    # or multi-cont, multi-cate, multi-ord
+    target_type = None
+
+    # calculate the target values
     if target == 'bulk_modulus':
+        target_type = 'continuous'
         y_data = np.array([ x['elasticity.K_VRH'] for x in data ])
         y_data = np.log10(y_data)
     elif target == 'shear_modulus':
+        target_type = 'continuous'
         y_data = np.array([ x['elasticity.G_VRH'] for x in data ])
         y_data = np.log10(y_data)
     elif target == 'density':
+        target_type = 'continuous'
         y_data = np.array([ Structure.from_str(x['cif'], fmt='cif').density 
                             for x in data ])
         #np.savetxt('../density', y_data, delimiter=' ', fmt='%.3f')
     elif target == 'vol_per_atom':
+        target_type = 'continuous'
         y_data = np.array([ Structure.from_str(x['cif'], fmt='cif').volume 
                             / len(Structure.from_str(x['cif'], fmt='cif')) 
                             for x in data ])
+    elif target == 'type_of_elements':
+        target_type = 'ordinal'
+        y_data = np.array([ len(Structure.from_str(x['cif'], fmt='cif').symbol_set) 
+                            for x in data ])
+    elif target == 'number_of_atoms':
+        target_type = 'ordinal'
+        y_data = np.array([ len(Structure.from_str(x['cif'], fmt='cif')) 
+                            for x in data ])
+    elif target == 'formula':
+        target_type = 'multi-cont'
+        y_data, elem_symbols = composition_one_hot(data=data, only_type=False)
+        print(elem_symbols)
     elif target == 'composition':
-        only_type = True
-        if only_type:
-            classifier = True
-        y_data, elem_symbols = composition_one_hot(data=data, only_type=only_type)
+        target_type = 'multi-cate'
+        y_data, elem_symbols = composition_one_hot(data=data, only_type=True)
         print(elem_symbols)
     else:
-        print('this target is not support, please check help')
+        print('This target is not support, please check help')
         exit()
 
     # select the machine learning algorithm
     if funct_name == 'krr':
         funct = KernelRidge(alpha=1.0)
     elif funct_name == 'svm':
-        if classifier:
+        if target_type in ('categorical', 'multi-cate'):
             funct = SVC(kernel='linear')
         else:
             funct = SVR(kernel='linear')
     elif funct_name == 'lasso':
         funct = Lasso()
     elif funct_name == 'rf':
-        if classifier:
+        if target_type in ('categorical', 'multi-cate'):
             funct = RandomForestClassifier(max_depth=2, random_state=0)
         else:
             funct = RandomForestRegressor(max_depth=2, random_state=0)
@@ -222,44 +257,42 @@ if __name__ == '__main__':
         print('this algorithm is not support, please check help')
         exit()
 
-    if test_size_depend:
+    if output == 'test_size_depend':
         for test_size in np.linspace(0.9, 0.1, 9):
             X_train, X_test, y_train, y_test = \
                 train_test_split(X_data, y_data, test_size=test_size, random_state=1) 
 
             funct.fit(X_train, y_train)
             y_pred = funct.predict(X_test)
-            if target == 'composition':
-                if only_type:
-                    pred_acc = [round(metrics.coverage_error(y_test, y_pred), 3),
-                                round(metrics.label_ranking_average_precision_score(y_test, y_pred), 3),
-                                round(metrics.label_ranking_loss(y_test, y_pred), 3) ]
-                else:
-                    pred_acc = [ metrics.mean_absolute_error(y_test[:,i], y_pred[:,i])
-                                for i in range(len(y_test[0])) ]
-            else:
+            if target_type == 'continuous':
                 pred_acc = metrics.mean_absolute_error(y_test, y_pred)
+            elif target_type == 'multi-cont':
+                pred_acc = [ metrics.mean_absolute_error(y_test[:,i], y_pred[:,i])
+                            for i in range(len(y_test[0])) ]
+            elif target_type == 'multi-cate':
+                pred_acc = [round(metrics.coverage_error(y_test, y_pred), 3),
+                            round(metrics.label_ranking_average_precision_score(y_test, y_pred), 3),
+                            round(metrics.label_ranking_loss(y_test, y_pred), 3) ]
+            elif target_type == 'ordinal':
+                y_pred = np.int64(y_pred + 0.5)
+                pred_acc = metrics.mean_absolute_error(y_test, y_pred)
+            else:
+                print('target type not supported')
 
             print('Training size {} ; Training samples {} ; Metrics {}'.format(
                     round(1-test_size, 3), int((1-test_size)*len(y_data)), pred_acc))
 
-            # output the observation vs prediction plot
-            if obs_vs_pred:
-                calc_obs_vs_pred(funct=funct, X_train=X_train, X_test=X_test, 
-                                y_train=y_train, y_test=y_test)
+    if output == 'obs_vs_pred':
+        calc_obs_vs_pred(funct=funct, X_data=X_data, y_data=y_data, test_size=0.2)
 
-    if grid_search:
-        test_size = 0.2
-        X_train, X_test, y_train, y_test = \
-            train_test_split(X_data, y_data, test_size=test_size, random_state=1) 
-        #krr_grid_search(X_train=X_train, y_train=y_train,
-        #                alpha=[1e0, 0.1, 1e-2, 1e-3], gamma=np.logspace(-2, 2, 5))
-        svr_grid_search(X_train=X_train, y_train=y_train, 
-                        gamma=np.logspace(-8, 1, 10), C=[1, 10, 100, 1000])
+    if output == 'grid_search':
+        if funct_name == 'krr':
+            krr_grid_search(alpha=[1e0, 0.1, 1e-2, 1e-3], gamma=np.logspace(-2, 2, 5),
+                            X_train=X_train, y_train=y_train, test_size=0.2)
+        elif funct_name == 'svm' and target_type not in ('categorical', 'multi-cate'):
+            svr_grid_search(gamma=np.logspace(-8, 1, 10), C=[1, 10, 100, 1000],
+                            X_data=X_data, y_data=y_data, test_size=0.2)
 
-    if learning_curve:
-        test_size = 0.2
-        X_train, X_test, y_train, y_test = \
-            train_test_split(X_data, y_data, test_size=test_size, random_state=1) 
-        calc_learning_curve(funct=funct, X_train=X_train, y_train=y_train)
+    if output == 'learning_curve':
+        calc_learning_curve(funct=funct, X_data=X_data, y_data=y_data, test_size=0.2)
 
