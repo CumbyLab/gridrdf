@@ -15,9 +15,10 @@ from sklearn.preprocessing import StandardScaler
 from sklearn import metrics
 
 from data_explore import composition_one_hot
+from visualize import calc_obs_vs_pred
 
 
-def read_and_trim_rdf(data, x_dir, trim=100):
+def read_and_trim_rdf(data, x_dir, trim='minimum'):
     '''
     Read the rdf files and trim them to the same length  
     for kernel methods training
@@ -31,7 +32,6 @@ def read_and_trim_rdf(data, x_dir, trim=100):
             integer value: if a value is given, all rdf longer than 
                 this value will be trimmed, short than this value will  
                 add 0.000 to the end
-
     Return:
         a two dimensional matrix, first dimension is the number of
         samples, and the second dimension is the flatten 1D rdf
@@ -111,23 +111,6 @@ def calc_learning_curve(funct, X_data, y_data, test_size=0.2):
     learning_curve_results = np.stack([ train_mean, train_std, test_mean, test_std ])
     learning_curve_results = learning_curve_results.transpose()
     np.savetxt('../learning_curve', learning_curve_results, delimiter=' ', fmt='%.3f')
-
-
-def calc_obs_vs_pred(funct, X_data, y_data, test_size):
-    '''
-    The observation vs prediction plot
-    '''
-    X_train, X_test, y_train, y_test = \
-            train_test_split(X_data, y_data, test_size=test_size, random_state=1)
-    funct.fit(X_train, y_train)
-    y_pred = funct.predict(X_test)
-    y_pred_train = funct.predict(X_train)
-    np.savetxt('../test.' + str(test_size), 
-                np.stack([y_test, y_pred]).transpose(), 
-                delimiter=' ', fmt='%.3f')
-    np.savetxt('../train.' + str(test_size), 
-                np.stack([y_train, y_pred_train]).transpose(), 
-                delimiter=' ', fmt='%.3f')
 
 
 def int_or_str(value):
@@ -265,34 +248,58 @@ if __name__ == '__main__':
             funct.fit(X_train, y_train)
             y_pred = funct.predict(X_test)
             if target_type == 'continuous':
-                pred_acc = metrics.mean_absolute_error(y_test, y_pred)
+                #pred_acc = metrics.mean_absolute_error(y_test, y_pred)
+                pred_acc = metrics.mean_absolute_percentage_error(y_test, y_pred)
             elif target_type == 'multi-cont':
                 pred_acc = [ metrics.mean_absolute_error(y_test[:,i], y_pred[:,i])
                             for i in range(len(y_test[0])) ]
+            elif target_type == 'categorical':
+                # has some problem 
+                # Classification metrics can't handle a mix of multiclass and continuous targets
+                pred_acc = metrics.accuracy_score(y_test, y_pred)
             elif target_type == 'multi-cate':
                 pred_acc = [round(metrics.coverage_error(y_test, y_pred), 3),
                             round(metrics.label_ranking_average_precision_score(y_test, y_pred), 3),
                             round(metrics.label_ranking_loss(y_test, y_pred), 3) ]
+                
+                y_bin = []
+                nlabel = len(y_pred[0])
+                for y in y_pred:
+                    labeled = len(np.where(y > 0.1))
+                    indice = y.argsort()[-labeled:]
+                    y_new = np.zeros(nlabel)
+                    y_new[indice] = 1
+                    y_bin.append(y_new)
+
+                '''np.savetxt('../multilabel_' + str(round(test_size,3)) + '_test', 
+                            y_test, delimiter=' ', fmt='%1i')
+                np.savetxt('../multilabel_' + str(round(test_size,3)) + '_pred', 
+                            y_pred, delimiter=' ', fmt='%.3f')
+                np.savetxt('../multilabel_' + str(round(test_size,3)) + '_bin', 
+                            np.stack(y_bin), delimiter=' ', fmt='%1i')'''
+                cm = metrics.multilabel_confusion_matrix(y_test, np.stack(y_bin))
+                np.savetxt('../confusion_matrix_' + str(round(test_size,3)), 
+                            cm.reshape(nlabel, 4), delimiter=' ', fmt='%.3f')
+
             elif target_type == 'ordinal':
                 y_pred = np.int64(y_pred + 0.5)
-                pred_acc = metrics.mean_absolute_error(y_test, y_pred)
+                #pred_acc = metrics.mean_absolute_error(y_test, y_pred)
+                pred_acc = metrics.mean_absolute_percentage_error(y_test, y_pred)
             else:
                 print('target type not supported')
 
             print('Training size {} ; Training samples {} ; Metrics {}'.format(
                     round(1-test_size, 3), int((1-test_size)*len(y_data)), pred_acc))
-
-    if output == 'obs_vs_pred':
+    elif output == 'obs_vs_pred':
         calc_obs_vs_pred(funct=funct, X_data=X_data, y_data=y_data, test_size=0.2)
-
-    if output == 'grid_search':
+    elif output == 'grid_search':
         if funct_name == 'krr':
             krr_grid_search(alpha=[1e0, 0.1, 1e-2, 1e-3], gamma=np.logspace(-2, 2, 5),
                             X_train=X_train, y_train=y_train, test_size=0.2)
         elif funct_name == 'svm' and target_type not in ('categorical', 'multi-cate'):
             svr_grid_search(gamma=np.logspace(-8, 1, 10), C=[1, 10, 100, 1000],
                             X_data=X_data, y_data=y_data, test_size=0.2)
-
-    if output == 'learning_curve':
+    elif output == 'learning_curve':
         calc_learning_curve(funct=funct, X_data=X_data, y_data=y_data, test_size=0.2)
-
+    else:
+        print('This output is not supported')
