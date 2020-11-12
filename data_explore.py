@@ -231,6 +231,76 @@ def elements_selection(data, elem_list, mode='include', method='any'):
 
     return data
 
+
+def similarity_matrix():
+    '''
+    Read the original file from the below reference, and convert into a dictionary
+
+    Hautier, G., et al. (2011). 
+    "Data mined ionic substitutions for the discovery of new compounds." 
+    Inorganic Chemistry 50(2): 656-663.
+
+    Preprocess the supporting txt file in the above paper using the following
+
+    ====================================================
+    #!/bin/sh
+    outfile=dist_matrix
+    > $outfile
+    for i in `seq 78` # up to Bi and remove nobel gas
+    do
+        e1=`sed -n "$i p" mendlev` # element symbols in Pettifor order
+        p1=`sed -n "$i p" Pettifor` # element symbol + valency in Pettifor order
+        for j in `seq 78`
+        do
+            e2=`sed -n "$j p" mendlev`
+            p2=`sed -n "$j p" Pettifor`
+            if [ $i -gt $j ]
+            then
+                r=`grep $p1 ic102031h_si_001.txt | grep $p2`
+                if [ -z "$r" ]
+                then
+                    grep -w $e1 ic102031h_si_001.txt | grep -w $e2 | head -n 1 >> $outfile
+                else
+                    echo $r >> $outfile
+                fi
+            fi
+        done
+    done
+    sed -i 's/:/ /g' $outfile # make the valency a seperate column
+    =========================================================
+
+    Args:
+
+    Return:
+
+    '''
+    # note that the index_col is after the use selection
+    d = pd.read_csv('dist_matrix', sep=' ', index_col=[0,1], usecols=[0,2,4])
+    d = d.unstack()
+    # drop the multilevel when ustack
+    d.columns = d.columns.droplevel()
+
+    # Pettifor order of elements
+    index = ['Cs', 'Rb', 'K', 'Na', 'Li', 'Ba', 'Sr', 'Ca', 'Yb', 'Eu', 'Y',  'Sc', 'Lu', 'Tm', 'Er', 'Ho', 
+            'Dy', 'Tb', 'Gd', 'Sm', 'Pm', 'Nd', 'Pr', 'Ce', 'La', 'Zr', 'Hf', 'Ti', 'Nb', 'Ta', 'V',  'Mo', 
+            'W',  'Cr', 'Tc', 'Re', 'Mn', 'Fe', 'Os', 'Ru', 'Co', 'Ir', 'Rh', 'Ni', 'Pt', 'Pd', 'Au', 'Ag', 
+            'Cu', 'Mg', 'Hg', 'Cd', 'Zn', 'Be', 'Tl', 'In', 'Al', 'Ga', 'Pb', 'Sn', 'Ge', 'Si', 'B',  'Bi', 
+            'Sb', 'As', 'P',  'Te', 'Se', 'S', 'C', 'I', 'Br', 'Cl', 'N', 'O', 'F', 'H']
+    # reindex, i.e. change the order of column and rows to Pettifor order  
+    d = d.fillna(0)
+    d = d.reindex(columns=index, fill_value=0) 
+    d = d.reindex(index=index, fill_value=0)
+    d = d + d.transpose()
+    # the maximum similarity number is 18.6, set the same element to 20, a bit arbitary
+    np.fill_diagonal(d.values,20)
+    d = d / 20
+    # then fill the zeros
+    d.loc[:,'Pm'] = d.loc[:,'Sm'] # column, same as:  d['Pm'] = d['Sm']
+    d.loc['Pm',:] = d.loc['Sm',:] # row
+    # other zero mean very dissimilar, so set to a very small value
+    d.replace(0, 0.01, inplace=True)
+
+
     
 
 if __name__ == '__main__':
@@ -249,6 +319,8 @@ if __name__ == '__main__':
                             '   composition: element-wise statistics of all compositions \n' +
                             '   subset: select a subset which have specified elements'
                       )
+    parse.add_argument('--elem_list', type=float, default='O',
+                        help='only used for subset task')
     parse.add_argument('--max_dist', type=float, default=10.0,
                         help='Cutoff distance of the RDF')
 
@@ -256,6 +328,8 @@ if __name__ == '__main__':
     infile = args.input
     rdf_dir = args.rdf_dir
     task = args.task
+
+    elem_list = args.elem_list
     max_dist = args.max_dist
 
     with open(infile,'r') as f:
@@ -274,7 +348,9 @@ if __name__ == '__main__':
     elif task == 'composition':
         elements_count(data)
     elif task == 'subset':
-        subset = elements_selection(data, elem_list=['O'])
+        print(elem_list)
+        subset = elements_selection(data, elem_list=elem_list.split(), 
+                                    mode='include', method='any')
         # note that 'data' is also changed because it is defined in __main__
         with open('subset.json', 'w') as f:
             json.dump(subset, f, indent=1)
