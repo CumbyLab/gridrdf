@@ -15,7 +15,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn import metrics
 
 from data_explore import composition_one_hot
-from visualize import calc_obs_vs_pred
+from visualization import calc_obs_vs_pred, binarize_output
 
 
 def read_and_trim_rdf(data, x_dir, trim='minimum'):
@@ -156,6 +156,7 @@ if __name__ == '__main__':
                             '   test_size_depend: change the test size from 0.1 to 0.9 \n' +
                             '   obs_vs_pred: plot the observation vs prediction results for \n' +
                             '       training and test set respectively, observation go first \n' +
+                            '   confusion_maxtrix: histogram for multt-label output \n' +
                             '   grid_search: cross validation grid search for meta parameters \n' +
                             '   learning_curve: the calculated learning curve will be stored \n' +
                             '       in ../learning_curve'
@@ -196,7 +197,7 @@ if __name__ == '__main__':
         y_data = np.array([ Structure.from_str(x['cif'], fmt='cif').density 
                             for x in data ])
         #np.savetxt('../density', y_data, delimiter=' ', fmt='%.3f')
-    elif target == 'vol_per_atom':
+    elif target == 'volume_per_atom':
         target_type = 'continuous'
         y_data = np.array([ Structure.from_str(x['cif'], fmt='cif').volume 
                             / len(Structure.from_str(x['cif'], fmt='cif')) 
@@ -240,6 +241,8 @@ if __name__ == '__main__':
         print('this algorithm is not support, please check help')
         exit()
 
+    # use a 80/20 split except otherwise stated, e.g. in varying test_size
+    test_size = 0.2
     if output == 'test_size_depend':
         for test_size in np.linspace(0.9, 0.1, 9):
             X_train, X_test, y_train, y_test = \
@@ -248,8 +251,8 @@ if __name__ == '__main__':
             funct.fit(X_train, y_train)
             y_pred = funct.predict(X_test)
             if target_type == 'continuous':
-                #pred_acc = metrics.mean_absolute_error(y_test, y_pred)
-                pred_acc = metrics.mean_absolute_percentage_error(y_test, y_pred)
+                pred_acc = metrics.mean_absolute_error(y_test, y_pred)
+                #pred_acc = metrics.mean_absolute_percentage_error(y_test, y_pred)
             elif target_type == 'multi-cont':
                 pred_acc = [ metrics.mean_absolute_error(y_test[:,i], y_pred[:,i])
                             for i in range(len(y_test[0])) ]
@@ -261,45 +264,48 @@ if __name__ == '__main__':
                 pred_acc = [round(metrics.coverage_error(y_test, y_pred), 3),
                             round(metrics.label_ranking_average_precision_score(y_test, y_pred), 3),
                             round(metrics.label_ranking_loss(y_test, y_pred), 3) ]
-                
-                y_bin = []
-                nlabel = len(y_pred[0])
-                for y in y_pred:
-                    labeled = len(np.where(y > 0.1))
-                    indice = y.argsort()[-labeled:]
-                    y_new = np.zeros(nlabel)
-                    y_new[indice] = 1
-                    y_bin.append(y_new)
-
-                '''np.savetxt('../multilabel_' + str(round(test_size,3)) + '_test', 
-                            y_test, delimiter=' ', fmt='%1i')
-                np.savetxt('../multilabel_' + str(round(test_size,3)) + '_pred', 
-                            y_pred, delimiter=' ', fmt='%.3f')
-                np.savetxt('../multilabel_' + str(round(test_size,3)) + '_bin', 
-                            np.stack(y_bin), delimiter=' ', fmt='%1i')'''
-                cm = metrics.multilabel_confusion_matrix(y_test, np.stack(y_bin))
-                np.savetxt('../confusion_matrix_' + str(round(test_size,3)), 
-                            cm.reshape(nlabel, 4), delimiter=' ', fmt='%.3f')
-
             elif target_type == 'ordinal':
                 y_pred = np.int64(y_pred + 0.5)
-                #pred_acc = metrics.mean_absolute_error(y_test, y_pred)
-                pred_acc = metrics.mean_absolute_percentage_error(y_test, y_pred)
+                pred_acc = metrics.mean_absolute_error(y_test, y_pred)
+                #pred_acc = metrics.mean_absolute_percentage_error(y_test, y_pred)
             else:
                 print('target type not supported')
 
             print('Training size {} ; Training samples {} ; Metrics {}'.format(
                     round(1-test_size, 3), int((1-test_size)*len(y_data)), pred_acc))
+    
     elif output == 'obs_vs_pred':
-        calc_obs_vs_pred(funct=funct, X_data=X_data, y_data=y_data, test_size=0.2)
+        calc_obs_vs_pred(funct=funct, X_data=X_data, y_data=y_data, test_size=test_size)
+    
+    elif output == 'confusion_matrix':
+        if target_type == 'multi-cate':
+            X_train, X_test, y_train, y_test = \
+                    train_test_split(X_data, y_data, test_size=test_size, random_state=1)
+            funct.fit(X_train, y_train)
+            y_pred = funct.predict(X_test)
+            y_bin = binarize_output(y_test, y_pred, threshold=None, save_to_file=False)
+
+            # Calcuate label-wise (typically element-wise) confustion matrix for each label. 
+            # The output is reshaped into a 'number of types of lables' by 4 
+            # in the order of true-positive false-positive false-negative true-negative
+            cm = metrics.multilabel_confusion_matrix(y_test, y_bin)
+            np.savetxt('../confusion_matrix_' + str(round(test_size,3)), 
+                        cm.reshape(len(y_pred[0]), 4), delimiter=' ', fmt='%.3f')
+        else:
+            print('This target does not support confusion matrix')
+    
     elif output == 'grid_search':
         if funct_name == 'krr':
             krr_grid_search(alpha=[1e0, 0.1, 1e-2, 1e-3], gamma=np.logspace(-2, 2, 5),
-                            X_train=X_train, y_train=y_train, test_size=0.2)
+                            X_train=X_train, y_train=y_train, test_size=test_size)
         elif funct_name == 'svm' and target_type not in ('categorical', 'multi-cate'):
             svr_grid_search(gamma=np.logspace(-8, 1, 10), C=[1, 10, 100, 1000],
-                            X_data=X_data, y_data=y_data, test_size=0.2)
+                            X_data=X_data, y_data=y_data, test_size=test_size)
+    
     elif output == 'learning_curve':
-        calc_learning_curve(funct=funct, X_data=X_data, y_data=y_data, test_size=0.2)
+        calc_learning_curve(funct=funct, X_data=X_data, y_data=y_data, test_size=test_size)
+    
     else:
         print('This output is not supported')
+
+
