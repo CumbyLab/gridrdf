@@ -226,13 +226,17 @@ def elements_selection(data, elem_list, mode='include', method='any'):
     '''
     for d in data[:]:
         elements = Structure.from_str(d['cif'], fmt='cif').symbol_set
-        if set(elem_list).isdisjoint(elements):
-            data.remove(d)
+        if mode == 'include':
+            if set(elem_list).isdisjoint(elements):
+                data.remove(d)
+        elif mode == 'exclude':
+            if not set(elem_list).isdisjoint(elements):
+                data.remove(d)
 
     return data
 
 
-def similarity_matrix():
+def similarity_matrix(input_file='dist_matrix', normalize='inverse', order='pt_number'):
     '''
     Read the original file from the below reference, and convert into a dictionary
 
@@ -240,8 +244,21 @@ def similarity_matrix():
     "Data mined ionic substitutions for the discovery of new compounds." 
     Inorganic Chemistry 50(2): 656-663.
 
-    Preprocess the supporting txt file in the above paper using the following
-
+    Args:
+        input_file: the preprocessed supporting txt file (from the above paper)
+                using the shell script below
+        normalize: method for value normalization
+            bound: all value divide by 20 (based on the maximum value)
+            log: all value got log10
+            inverse: 1 / values
+        order: the order of element in the matrix
+            pt_number: the order in periodic table, i.e. atomic number
+                    typically for calculation purpose
+            pettifor: typically for visualization purpose, following 
+                    Pettifor, D. G. (1990). "Structure maps in alloy design." 
+                    Journal of the Chemical Society, Faraday Transactions 86(8): 1209.
+     Return:
+        a pandas dataframe of the similarity matrix
     ====================================================
     #!/bin/sh
     outfile=dist_matrix
@@ -268,41 +285,52 @@ def similarity_matrix():
     done
     sed -i 's/:/ /g' $outfile # make the valency a seperate column
     =========================================================
-
-    Args:
-
-    Return:
-
     '''
     # note that the index_col is after the use selection
-    d = pd.read_csv('dist_matrix', sep=' ', index_col=[0,1], usecols=[0,2,4])
+    d = pd.read_csv(input_file, sep=' ', index_col=[0,1], usecols=[0,2,4])
     d = d.unstack()
     # drop the multilevel when ustack
     d.columns = d.columns.droplevel()
 
     # Pettifor order of elements
-    index = ['Cs', 'Rb', 'K', 'Na', 'Li', 'Ba', 'Sr', 'Ca', 'Yb', 'Eu', 'Y',  'Sc', 'Lu', 'Tm', 'Er', 'Ho', 
-            'Dy', 'Tb', 'Gd', 'Sm', 'Pm', 'Nd', 'Pr', 'Ce', 'La', 'Zr', 'Hf', 'Ti', 'Nb', 'Ta', 'V',  'Mo', 
-            'W',  'Cr', 'Tc', 'Re', 'Mn', 'Fe', 'Os', 'Ru', 'Co', 'Ir', 'Rh', 'Ni', 'Pt', 'Pd', 'Au', 'Ag', 
-            'Cu', 'Mg', 'Hg', 'Cd', 'Zn', 'Be', 'Tl', 'In', 'Al', 'Ga', 'Pb', 'Sn', 'Ge', 'Si', 'B',  'Bi', 
-            'Sb', 'As', 'P',  'Te', 'Se', 'S', 'C', 'I', 'Br', 'Cl', 'N', 'O', 'F', 'H']
+    if order == 'pt_number':
+        index = ['H', 'Li', 'Be', 'B',  'C',  'N',  'O',  'F', 'Na', 'Mg', 'Al', 'Si', 'P',  'S',  'Cl', 
+                'K',  'Ca', 'Sc', 'Ti', 'V',  'Cr', 'Mn', 'Fe', 'Co', 'Ni', 'Cu', 'Zn', 'Ga', 'Ge', 'As', 'Se', 'Br', 
+                'Rb', 'Sr', 'Y',  'Zr', 'Nb', 'Mo', 'Tc', 'Ru', 'Rh', 'Pd', 'Ag', 'Cd', 'In', 'Sn', 'Sb', 'Te', 'I', 
+                'Cs', 'Ba', 'La', 'Ce', 'Pr', 'Nd', 'Pm', 'Sm', 'Eu', 'Gd', 'Tb', 'Dy', 'Ho', 'Er', 'Tm', 'Yb', 'Lu', 
+                'Hf', 'Ta', 'W',  'Re', 'Os', 'Ir', 'Pt', 'Au', 'Hg', 'Tl', 'Pb', 'Bi']
+    elif order == 'pettifor':
+        index = ['Cs', 'Rb', 'K', 'Na', 'Li', 'Ba', 'Sr', 'Ca', 'Yb', 'Eu', 'Y',  'Sc', 'Lu', 'Tm', 'Er', 'Ho', 
+                'Dy', 'Tb', 'Gd', 'Sm', 'Pm', 'Nd', 'Pr', 'Ce', 'La', 'Zr', 'Hf', 'Ti', 'Nb', 'Ta', 'V',  'Mo', 
+                'W',  'Cr', 'Tc', 'Re', 'Mn', 'Fe', 'Os', 'Ru', 'Co', 'Ir', 'Rh', 'Ni', 'Pt', 'Pd', 'Au', 'Ag', 
+                'Cu', 'Mg', 'Hg', 'Cd', 'Zn', 'Be', 'Tl', 'In', 'Al', 'Ga', 'Pb', 'Sn', 'Ge', 'Si', 'B',  'Bi', 
+                'Sb', 'As', 'P',  'Te', 'Se', 'S', 'C', 'I', 'Br', 'Cl', 'N', 'O', 'F', 'H']
     # reindex, i.e. change the order of column and rows to Pettifor order  
     d = d.fillna(0)
     d = d.reindex(columns=index, fill_value=0) 
     d = d.reindex(index=index, fill_value=0)
     d = d + d.transpose()
     # the maximum similarity number is 18.6, set the same element to 20, a bit arbitary
-    np.fill_diagonal(d.values,20)
-    d = d / 20
+    np.fill_diagonal(d.values, 20)
     # then fill the zeros
     d.loc[:,'Pm'] = d.loc[:,'Sm'] # column, same as:  d['Pm'] = d['Sm']
     d.loc['Pm',:] = d.loc['Sm',:] # row
     # other zero mean very dissimilar, so set to a very small value
-    d.replace(0, 0.01, inplace=True)
+    d.replace(0, 0.1, inplace=True)
 
+    if normalize == 'bound':
+        d = d / 20
+    elif normalize == 'log':
+        d = np.log10(d)
+    elif normalize == 'inverse':
+        d = 1 / d
+        np.fill_diagonal(d.values, 0)
+    else:
+        print('normalization method not supported')
+
+    return d
 
     
-
 if __name__ == '__main__':
     parse = argparse.ArgumentParser(description='Data explore',
                                     formatter_class=argparse.RawTextHelpFormatter)
@@ -319,7 +347,7 @@ if __name__ == '__main__':
                             '   composition: element-wise statistics of all compositions \n' +
                             '   subset: select a subset which have specified elements'
                       )
-    parse.add_argument('--elem_list', type=float, default='O',
+    parse.add_argument('--elem_list', type=str, default='O',
                         help='only used for subset task')
     parse.add_argument('--max_dist', type=float, default=10.0,
                         help='Cutoff distance of the RDF')
@@ -350,7 +378,7 @@ if __name__ == '__main__':
     elif task == 'subset':
         print(elem_list)
         subset = elements_selection(data, elem_list=elem_list.split(), 
-                                    mode='include', method='any')
+                                    mode='exclude', method='any')
         # note that 'data' is also changed because it is defined in __main__
         with open('subset.json', 'w') as f:
             json.dump(subset, f, indent=1)
