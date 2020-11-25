@@ -10,17 +10,19 @@ from itertools import combinations
 from pandas import DataFrame
 from pymatgen import Structure
 from pymatgen.core.periodic_table import Element
+from pymatgen.analysis.local_env import CrystalNN
 from sklearn.preprocessing import MultiLabelBinarizer
 try:
     from matminer.featurizers.structure import StructuralComplexity
 except:
     print('matminer is not installed, cannot calculate structural complexity')
 
-from extendRDF import rdf_histo, rdf_kde, get_rdf_and_atoms
+from extendRDF import rdf_histo, rdf_kde, get_rdf_and_atoms, shell_similarity
 from otherRDFs import origin_rdf_histo
 
 
-def batch_rdf(data, max_dist=10, bin_size=0.1, method='bin', gzip_file=False):
+def batch_rdf(data, max_dist=10, bin_size=0.1, method='bin', normalize=True, 
+                gzip_file=False):
     '''
     Read structures and output the extend RDF
 
@@ -47,8 +49,8 @@ def batch_rdf(data, max_dist=10, bin_size=0.1, method='bin', gzip_file=False):
         elif method == 'bin':
             # this should be replaced by the general kde uniform method in the future
             rdf_bin = rdf_histo(rdf_atoms=rdf_atoms, max_dist=max_dist, bin_size=bin_size)
-            # due to the method used, all rdf should be normalized
-            rdf_bin = rdf_bin / len(struct)
+            if normalize:
+                rdf_bin = rdf_bin / len(struct)
         else:
             print('This method is not supported in RDF calculation ')
 
@@ -63,6 +65,121 @@ def batch_rdf(data, max_dist=10, bin_size=0.1, method='bin', gzip_file=False):
     return
 
 
+def batch_shell_similarity(all_rdf, method='append'):
+    '''
+    Calculate shell similarity for multiple RDFs
+    
+    Args:
+        all_rdf: multiple RDFs with the same length
+        method: how shell similarity is used in the X input
+            append: append the similarity values after rdfs
+            only: only use similarity values as the X input
+    Return:
+        RDF with shell similarity or similarity only
+    '''
+    rdf_shell_simi = []
+    for rdf in all_rdf:
+        if method == 'append':
+            rdf_shell_simi.append(np.append(rdf, shell_similarity(rdf)))
+        elif method == 'only':
+            rdf_shell_simi.append(shell_similarity(rdf))
+    return np.stack(rdf_shell_simi)
+
+
+def rdf_trim(all_rdf, trim='minimum'):
+    '''
+    Trim the rdfs to the same length for kernel methods training
+
+    Args:
+        all_rdf: a list of np array (rdfs) with different length
+        trim: must be one of 'no', 'minimum' or an integer
+            no: no trim when the RDF already have the same length, 
+            minimum: all rdf trim to the value of the smallest rdf
+            integer value: if a value is given, all rdf longer than 
+                this value will be trimmed, short than this value will  
+                add 0.000 to the end
+    Return:
+        a two dimensional matrix, first dimension is the number of
+        samples, and the second dimension is the flatten 1D rdf    
+    '''
+    rdf_lens = []
+    for rdf in all_rdf:
+        rdf_lens.append(len(rdf))
+
+    if trim == 'minimum':
+        min_len = np.array(rdf_lens).min()
+        all_rdf = [ x[:min_len] for x in all_rdf]
+    elif isinstance(trim, int):
+        for i, rdf_len in enumerate(rdf_lens):
+            if rdf_len < trim:
+                nbins = len(all_rdf[i][0])
+                all_rdf[i] = np.append( all_rdf[i], 
+                                        [[0.0] * nbins] * (trim-rdf_len), 
+                                        axis=0 )
+            else:
+                all_rdf[i] = all_rdf[i][:trim]
+    elif trim == 'none':
+        pass 
+    else:
+        print('wrong value provided for trim') 
+
+    return np.stack(all_rdf)
+
+
+def rdf_flatten(all_rdf):
+    '''
+    If the rdf is not 1d, make it 1d for machine learning input
+
+    Args:
+        all_rdf: a 2D or 3D np array (rdfs) with the same length, 
+            with the first dimension be number of samples
+    Return:
+        a 2D np array of rdfs
+    '''
+    if len(all_rdf[0].shape) == 2:
+        all_rdf = [ x.flatten() for x in all_rdf]
+    return all_rdf
+
+
+def bond_length_statis(structure): 
+    '''
+    Calculated some bond length statistics values in the structure
+    the nearest atoms pairs are determined using pymatgen CrystalNN module
+
+    Currently the range of bond length has some problem for structure with
+    no bonding, i.e. empty np array
+
+    Args:
+        structrue: pymatgen structure
+    Return:
+        the mean value and standard deviation and all the cation-anion
+        bond length in the crystal structure
+    '''
+    nn = CrystalNN()
+    bond_len = []
+    for j in range(len(structure)) : 
+        for i in nn.get_nn_info(structure, j) :       
+            bond_len.append(structure[j].distance(structure[i['site_index']]))
+    bond_len = np.array(bond_len)
+    return bond_len.mean(), bond_len.std()#, bond_len.ptp()
+
+
+def average_coordination(structrue):
+    '''
+    Calculation of average coordination number over every site in a structure
+    using Vorini method
+
+    Args:
+        structrue: pymatgen structure
+    Return:
+        Average coordination number
+    '''
+    ave_coord_num = []
+    for atom_site in range(len(structure)) :
+        ave_coord_num.append(len(nn.get_nn_info(structure, atom_site)))
+    return np.array(ave_coord_num).mean()
+
+
 def num_of_shells(data, dir):
     '''
     Calculate the number of nearest neighbor shells in RDF for each compound,  
@@ -74,19 +191,32 @@ def num_of_shells(data, dir):
     Return:
         a list of properties, will change according to requrest
     '''
-    sc = StructuralComplexity()
+    #sc = StructuralComplexity()
     results = []
     for d in data:
         struct = Structure.from_str(d['cif'], fmt='cif')
-        num_shell = sum(1 for line in open(dir + '/' + d['task_id']))
         #complex_atom, complex_cell = sc.featurize(struct)
+        '''num_shell = sum(1 for line in open(dir + '/' + d['task_id']))
+
+        with open(dir + '/' + d['task_id']) as f:
+            rdf = np.loadtxt(f, delimiter=' ')
+            num_rdf_bar = np.count_nonzero(rdf[:30])
+        '''
+        bond_mean, bond_std = bond_length_statis(struct)
+
         results.append(np.array([
-            #d['elasticity.K_Voigt'],    # bulk modulus
-            num_shell,                  # number of RDF shells
-            struct.volume/len(struct),  # volume per atom
-            struct.density,             # density in g/cm^3
-            len(struct),                # number of atoms
-            len(struct.symbol_set),     # number of types of elements
+            #d['elasticity.K_Voigt'],           # bulk modulus
+            #num_shell,                          # number of RDF shells
+            #num_rdf_bar,                        # non-zeors in the first 30 RDF shell
+            #struct.volume/len(struct),          # volume per atom
+            struct.volume,                      # volume
+            struct.get_space_group_info()[1],   # space group number
+            bond_mean,
+            bond_std,
+            #,     # average coordination nunmber
+            #struct.density,                     # density in g/cm^3
+            len(struct),                        # number of atoms
+            len(struct.symbol_set),             # number of types of elements
             #sc.featurize(struct)[0],    # structural complexcity per atom
         ]))
 
@@ -152,6 +282,7 @@ def composition_one_hot(data, only_type=False, normalize=True):
         elem_symbols = [ Element.from_Z(x).name for x in elem_numbers ]
         return np.ndarray.round(data_np, 3), elem_symbols
 
+
 def elements_count(data):
     '''
     Count the elements distribution histogram in the compounds dataset,  
@@ -163,6 +294,7 @@ def elements_count(data):
         write element histogram in elem_histo file
         write element-wise covariance matrix in elem_matrix file
     '''
+    # This is the periodic table which DFT pesudopotentials are avaiable
     periodic_table = [
         'H',  'He', 
         'Li', 'Be', 'B',  'C',  'N',  'O',  'F',  'Ne', 
@@ -330,30 +462,88 @@ def similarity_matrix(input_file='dist_matrix', normalize='inverse', order='pt_n
 
     return d
 
-    
+
+def bonding_type(structure):
+    '''
+    Calculate bonding in a given structure.
+
+    Args:
+        structure: a pymatgen structure
+    Return:
+        A list of atomic pairs which form bonding
+    '''
+    nn = CrystalNN()
+    bond_elem_list = []
+    bond_num_list = []
+    for i in list(range(len(struct))):
+        site1 = struct[i].species_string
+        num1 = struct[i].specie.number
+        for neigh in nn.get_nn_info(struct, i):
+            bond_elem_list.append(' '.join(sorted([site1, neigh['site'].species_string])))
+            bond_num_list.append(' '.join(list(map(str, sorted([num1, neigh['site'].specie.number])))))
+
+    bond_elem_list = list(set(bond_elem_list))
+    bond_num_list = list(set(bond_num_list))
+   
+    return bond_elem_list, bond_num_list
+            
+
+def bonding_matrix(data):
+    '''
+    Convert the atomic pair of bonding into a matrix representation
+    Remove the elements that don't exsit, then flatten it.
+
+    Args:
+        data: a list of dicts with CIFs
+    Return:
+        A 2D vector, first dimension is number of samples.
+    '''
+    periodic_table = ['H', 'Li', 'Be', 'B',  'C',  'N',  'O',  'F', 'Na', 'Mg', 'Al', 'Si', 'P',  'S',  'Cl', 
+            'K',  'Ca', 'Sc', 'Ti', 'V',  'Cr', 'Mn', 'Fe', 'Co', 'Ni', 'Cu', 'Zn', 'Ga', 'Ge', 'As', 'Se', 'Br', 
+            'Rb', 'Sr', 'Y',  'Zr', 'Nb', 'Mo', 'Tc', 'Ru', 'Rh', 'Pd', 'Ag', 'Cd', 'In', 'Sn', 'Sb', 'Te', 'I', 
+            'Cs', 'Ba', 'La', 'Ce', 'Pr', 'Nd', 'Pm', 'Sm', 'Eu', 'Gd', 'Tb', 'Dy', 'Ho', 'Er', 'Tm', 'Yb', 'Lu', 
+            'Hf', 'Ta', 'W',  'Re', 'Os', 'Ir', 'Pt', 'Au', 'Hg', 'Tl', 'Pb', 'Bi']
+
+    all_bond_matrix = []
+    num_elements = len(periodic_table)
+    zeor_bond_matrix = pd.DataFrame(np.zeros((num_elements, num_elements)), 
+                                    index=periodic_table, columns=periodic_table)
+    for d in data:
+        bond_matrix = zeor_bond_matrix
+        bond_list = d['bond_elem_list']
+        for bond in bond_list:
+            elem1, elem2 = bond.split()
+            bond_matrix.loc[elem1, elem2] = 1
+            bond_matrix.loc[elem2, elem1] = 1
+        all_bond_matrix.append(bond_matrix.values.flatten())
+    # HERE NEED TO DELETE ZERO ROW/COLUMN AND THEN FLATTEN
+    return np.stack(all_bond_matrix)
+
+
 if __name__ == '__main__':
-    parse = argparse.ArgumentParser(description='Data explore',
+    parser = argparse.ArgumentParser(description='Data explore',
                                     formatter_class=argparse.RawTextHelpFormatter)
-    parse.add_argument('--input', type=str, default='../MP_modulus.json',
+    parser.add_argument('--input_file', type=str, default='../MP_modulus.json',
                         help='the bulk modulus and structure from Materials Project')
-    parse.add_argument('--rdf_dir', type=str, default='./',
+    parser.add_argument('--rdf_dir', type=str, default='./',
                         help='dir has all the rdf files')
-    parse.add_argument('--task', type=str, default='num_shell',
+    parser.add_argument('--task', type=str, default='num_shell',
                         help='which property to be calculated: \n' +
                             '   num_shell: number of RDF shells and other propreties \n' +
                             '   extend_rdf_bin: binned extend RDF of all the CIFs \n' +
                             '   extend_rdf_kde: kernel density estimation RDF \n' + 
                             '   origin_rdf: calcualte vanilla RDF of all the CIFs \n' + 
                             '   composition: element-wise statistics of all compositions \n' +
+                            '   bonding_type: \n' +
                             '   subset: select a subset which have specified elements'
                       )
-    parse.add_argument('--elem_list', type=str, default='O',
+    parser.add_argument('--elem_list', type=str, default='O',
                         help='only used for subset task')
-    parse.add_argument('--max_dist', type=float, default=10.0,
+    parser.add_argument('--max_dist', type=float, default=10.0,
                         help='Cutoff distance of the RDF')
 
-    args = parse.parse_args()
-    infile = args.input
+    args = parser.parse_args()
+    infile = args.input_file
     rdf_dir = args.rdf_dir
     task = args.task
 
@@ -366,7 +556,7 @@ if __name__ == '__main__':
     if task == 'num_shell':
         results = num_of_shells(data=data, dir=rdf_dir)
         outfile = '../num_shell'
-        np.savetxt(outfile, results, delimiter=' ',fmt='%.3f')
+        np.savetxt(outfile, results, delimiter=' ', fmt='%.3f')
     elif task == 'extend_rdf_bin':
         batch_rdf(data, max_dist=max_dist, method='bin')
     elif task == 'extend_rdf_kde':
@@ -375,6 +565,12 @@ if __name__ == '__main__':
         origin_rdf_histo(data, max_dist=max_dist)
     elif task == 'composition':
         elements_count(data)
+    elif task == 'bonding_type':
+        for d in data:
+            struct = Structure.from_str(d['cif'], fmt='cif')
+            d['bond_elem_list'], d['bond_num_list'] = bonding_type(struct)
+        with open(infile.replace('.json','_with_bond.json'), 'w') as f:
+            json.dump(data, f, indent=1)
     elif task == 'subset':
         print(elem_list)
         subset = elements_selection(data, elem_list=elem_list.split(), 
