@@ -1,8 +1,8 @@
 
-
 import os
 import json
 import argparse
+import gzip, tarfile
 import numpy as np
 import pandas as pd
 from pymatgen import Structure
@@ -16,57 +16,56 @@ from sklearn.preprocessing import StandardScaler
 from sklearn import metrics
 from pyemd import emd
 
-from data_explore import composition_one_hot
+from data_explore import composition_one_hot, rdf_trim, rdf_flatten, \
+                        batch_shell_similarity, bonding_matrix
 from visualization import calc_obs_vs_pred, binarize_output
+from extendRDF import shell_similarity
 
-def read_and_trim_rdf(data, x_dir, trim='minimum'):
+
+def rdf_read(data, x_dir, zip_file=False):
     '''
-    Read the rdf files and trim them to the same length  
-    for kernel methods training
+    Read the rdf files from the dir.  
 
     Args:
         data: modulus data from materials project
         x_dir: the dir has all (and only) the rdf files
-        trim: must be one of 'no', 'minimum' or an integer
-            no: no trim when the RDF already have the same length, 
-            minimum: all rdf trim to the value of the smallest rdf
-            integer value: if a value is given, all rdf longer than 
-                this value will be trimmed, short than this value will  
-                add 0.000 to the end
+        zip_file: if the RDFs are gzip file
     Return:
-        a two dimensional matrix, first dimension is the number of
+        a list of np array (rdfs) with different length, 
+        first dimension is the number of
         samples, and the second dimension is the flatten 1D rdf
     '''
     all_rdf = []
-    rdf_lens = []
     for d in data:
-        rdf_file = d['task_id']
-        rdf = np.loadtxt(rdf_file, delimiter=' ')
+        rdf_file = x_dir + '/' + d['task_id']
+        if zip_file:
+            with gzip.open(rdf_file + '.gz', 'r') as f:
+                rdf = np.loadtxt(f, delimiter=' ')
+        else:
+            rdf = np.loadtxt(rdf_file, delimiter=' ')
         all_rdf.append(rdf)
-        rdf_lens.append(len(rdf))
+    return all_rdf
 
-    if trim == 'minimum':
-        min_len = np.array(rdf_lens).min()
-        all_rdf = [ x[:min_len] for x in all_rdf]
-    elif isinstance(trim, int):
-        for i, rdf_len in enumerate(rdf_lens):
-            if rdf_len < trim:
-                nbins = len(all_rdf[i][0])
-                all_rdf[i] = np.append( all_rdf[i], 
-                                        [[0.0] * nbins] * (trim-rdf_len), 
-                                        axis=0 )
-            else:
-                all_rdf[i] = all_rdf[i][:trim]
-    elif trim == 'no':
-        pass 
-    else:
-        print('wrong value provided for trim') 
 
-    # if the rdf is not 1d, make it 1d for machine learning input
-    if len(all_rdf[0].shape) == 2:
-        all_rdf = [ x.flatten() for x in all_rdf]
-    
-    return np.stack(all_rdf)
+def rdf_read_tar(data, x_file):
+    '''
+    Read the rdf files from a tar file.  
+
+    Args:
+        data: modulus data from materials project
+        x_file: the tar file has rdfs
+    Return:
+        a list of np array (rdfs) with different length, 
+        first dimension is the number of
+        samples, and the second dimension is the flatten 1D rdf
+    '''
+    all_rdf = []
+    with tarfile.open(x_file, 'r:*') as tar:
+        for d in data:
+            rdf_file = d['task_id']
+            rdf = np.loadtxt(tar.extractfile(rdf_file), delimiter=' ')
+            all_rdf.append(rdf)
+    return all_rdf
 
 
 def krr_grid_search(alpha, gamma, X_data, y_data, test_size=0.2):
@@ -137,6 +136,26 @@ def earth_mover_dist(y_test, y_pred):
     return np.stack(dist).mean()
 
 
+def bond_to_atom(data, nelem=78):
+    '''
+    Convert atomic pairs bonding into the exsitance of elements
+
+    Args:
+        Data: y_data of flatten matrix
+        nelem: number of elements in the periodic table, determines the shape
+            of the bonding matrix
+    Return:
+        One-hot vector of elements
+    '''
+    new_data = []
+    for y in data:
+        y = np.reshape(y, (nelem, nelem))
+        # make all the non-zero values to 1
+        # NOTETHAT the sum method is only valid for a symmetric bonding matrix
+        new_data.append(np.sum(y, axis=0).astype(bool).astype(int))
+    return np.stack(new_data)
+    
+
 if __name__ == '__main__':
     # input parameters
     parser = argparse.ArgumentParser(description='Train machine learning algorithm',
@@ -144,12 +163,17 @@ if __name__ == '__main__':
 
     # input files of the training dataset
     parser.add_argument('--xdir', type=str, default='./',
-                        help='All the rdf files for training')
+                        help='All the rdf files for training \n' +
+                            '   default is current work dir'
+                        )
     parser.add_argument('--input_file', type=str, default='../MP_modulus.json',
-                        help='files contain target data')
+                        help='files contain target data \n' +
+                            '   default is ../MP_modulus.json'
+                        )
+
     parser.add_argument('--funct', type=str, default='krr',
                         help='which function is used, currently support: \n' +
-                            '   krr(Kernel Ridge Regression) \n' +
+                            '   krr(default, Kernel Ridge Regression) \n' +
                             '   svm(Support Vector Machine) \n' +
                             '   rf(random forest) \n' +
                             '   lasso'
@@ -159,15 +183,19 @@ if __name__ == '__main__':
                             '   bulk_modulus \n' +
                             '   shear_modulus \n' +
                             '   density \n' +
-                            '   formula: percentage of elements in each compound \n' +
-                            '   composition: which types of elements in each compound \n' +
+                            '   composition: percentage of elements in each compound \n' +
+                            '   type_of_elements: which types of elements in each compound \n' +
                             '   volume_per_atom \n' +
+                            '   volume \n' +
+                            '   space_group_number \n' +
+                            '   average_coordination \n' +
                             '   number_of_atoms: in the unit cell \n' +
-                            '   type_of_elements: number of atomic species of the compound '
+                            '   bonding_type:  \n' +
+                            '   number_of_species: number of atomic species of the compound '
                         )
     parser.add_argument('--output', type=str, default='test_size_depend',
                         help='one of the following: \n'+
-                            '   test_size_depend: change the test size from 0.1 to 0.9 \n' +
+                            '   test_size_depend: default, change the test size from 0.1 to 0.9 \n' +
                             '   obs_vs_pred: plot the observation vs prediction results for \n' +
                             '       training and test set respectively, observation go first \n' +
                             '   confusion_maxtrix: histogram for multt-label output \n' +
@@ -178,7 +206,7 @@ if __name__ == '__main__':
                         )
     parser.add_argument('--metrics', type=str, default='default',
                         help='which metrics is used, currently support: \n' +
-                            '   default: mae for continuous data,  \n' +
+                            '   default: mae for continuous data \n' +
                             '   mae: mean absolute error \n' +
                             '   mape: mean absolute pencentage error \n' +
                             '   emd: earth mover distance, i.e. wasserstein metrics'
@@ -186,7 +214,17 @@ if __name__ == '__main__':
 
     # parameters for rdf preprocessing
     parser.add_argument('--trim', type=str, default='minimum',
-                        help='the number of shells for RDF')
+                        help='the number of shells for RDF \n' +
+                            '   minimum: default, use the minimum number of shells \n' +
+                            '   none: no trim, suitable for origin RDF  \n' +
+                            '   or an integer number'
+                        )
+    parser.add_argument('--shell_similarity', type=str, default='none',
+                        help='how to use the similarity values between adjacent rdf shells: \n' +
+                            '   none: do not use shell similarity  \n' +
+                            '   append: append the similarity values after rdfs \n' +
+                            '   only: only use similarity values as the X input'
+                        )
 
     args = parser.parse_args()
     x_dir = args.xdir
@@ -195,13 +233,30 @@ if __name__ == '__main__':
     metrics_method = args.metrics
     funct_name = args.funct
     output = args.output
-    trim = int_or_str(args.trim) 
+    trim = int_or_str(args.trim)
+    shell_similarity = args.shell_similarity
 
     # prepare the dataset and split to train and test
     with open (y_file,'r') as f:
         data = json.load(f)
     if output != 'random_guess':
-        X_data = read_and_trim_rdf(data, x_dir, trim=trim)
+        if 'tar' in x_dir:
+            all_rdf = rdf_read_tar(data, x_dir)
+        else:
+            all_rdf = rdf_read(data, x_dir)
+        
+        all_rdf = rdf_trim(all_rdf, trim=trim)
+
+        if shell_similarity == 'none':
+            X_data = rdf_flatten(all_rdf)
+        elif shell_similarity == 'append':
+            X_data = batch_shell_similarity(all_rdf, method='append')
+        elif shell_similarity == 'only':
+            X_data = batch_shell_similarity(all_rdf, method='only')
+        else:
+            print('Wrong shell similarity argument')
+
+    np.savetxt('../X_data', X_data, delimiter=' ',fmt='%.3f')
 
     # target_type can be continuous categorical ordinal
     # or multi-cont, multi-cate, multi-ord
@@ -226,25 +281,45 @@ if __name__ == '__main__':
         y_data = np.array([ Structure.from_str(x['cif'], fmt='cif').volume 
                             / len(Structure.from_str(x['cif'], fmt='cif')) 
                             for x in data ])
-    elif target == 'type_of_elements':
-        target_type = 'ordinal'
-        y_data = np.array([ len(Structure.from_str(x['cif'], fmt='cif').symbol_set) 
+    elif target == 'volume':
+        target_type = 'continuous'
+        y_data = np.array([ Structure.from_str(x['cif'], fmt='cif').volume 
                             for x in data ])
-        #target_type = 'categorical'
-        #y_data = [ str(len(Structure.from_str(x['cif'], fmt='cif').symbol_set)) 
-        #                    for x in data ]
+    elif target == 'space_group_number':
+        target_type = 'continuous'
+        y_data = np.array([ Structure.from_str(x['cif'], fmt='cif').get_space_group_info()[1]
+                            for x in data ])
+    elif target == 'number_of_species':
+        #target_type = 'ordinal'
+        #y_data = np.array([ len(Structure.from_str(x['cif'], fmt='cif').symbol_set) 
+        #                    for x in data ])
+        target_type = 'categorical'
+        y_data = [ str(len(Structure.from_str(x['cif'], fmt='cif').symbol_set)) 
+                            for x in data ]
     elif target == 'number_of_atoms':
         target_type = 'ordinal'
         y_data = np.array([ len(Structure.from_str(x['cif'], fmt='cif')) 
                             for x in data ])
-    elif target == 'formula':
+    elif target == 'composition':
         target_type = 'multi-cont'
         y_data, elem_symbols = composition_one_hot(data=data, only_type=False)
         print(elem_symbols)
-    elif target == 'composition':
+    elif target == 'type_of_elements':
         target_type = 'multi-cate'
         y_data, elem_symbols = composition_one_hot(data=data, only_type=True)
         print(elem_symbols)
+    elif target == 'bonding_type':
+        target_type = 'multi-cate'
+        y_data = bonding_matrix(data=data)
+    elif target == 'average_coordination':
+        target_type = 'continuous'
+        y_data = np.array([ x['average_coordination'] for x in data ])
+    elif target == 'average_bond_length':
+        target_type = 'continuous'
+        y_data = np.array([ x['average_bond_length'] for x in data ])
+    elif target == 'bond_length_std':
+        target_type = 'continuous'
+        y_data = np.array([ x['bond_length_std'] for x in data ])
     else:
         print('This target is not support, please check help')
         exit()
@@ -295,11 +370,18 @@ if __name__ == '__main__':
                     print('This metrics is not support for multi-continuous data')
             elif target_type == 'categorical'and target == 'type_of_elements':
                 # now only implemented for type of elements
-                y_pred[np.where(y_pred > 5)] = 5
-                y_pred = list(map(str, list(np.int64(y_pred + 0.5))))
+                #y_pred[np.where(y_pred > 5)] = 5
+                #y_pred = list(map(str, list(np.int64(y_pred + 0.5))))
                 #print(type(y_test), type(y_test[0]), y_test[0], type(y_pred), type(y_pred[0]), y_pred[0])
-                pred_acc = metrics.accuracy_score(y_test, y_pred)
+                #pred_acc = metrics.accuracy_score(y_test, y_pred)
+                y_test = list(map(float, y_test))
+                pred_acc = metrics.mean_absolute_error(y_test, y_pred)
             elif target_type == 'multi-cate':
+                if target == 'bonding_type':
+                    y_test = bond_to_atom(y_test)
+                    np.where(y_pred > 0.2, y_pred, 0)
+                    y_pred = bond_to_atom(y_pred)
+
                 if metrics_method == 'default':
                     pred_acc = [round(metrics.coverage_error(y_test, y_pred), 3),
                             round(metrics.label_ranking_average_precision_score(y_test, y_pred), 3),
@@ -323,7 +405,8 @@ if __name__ == '__main__':
                     round(1-test_size, 3), int((1-test_size)*len(y_data)), pred_acc))
     
     elif output == 'obs_vs_pred':
-        calc_obs_vs_pred(funct=funct, X_data=X_data, y_data=y_data, test_size=test_size)
+        calc_obs_vs_pred(funct=funct, X_data=X_data, y_data=y_data, test_size=test_size,
+                        outdir='../'+target+'_')
     
     elif output == 'confusion_matrix':
         if target_type == 'multi-cate':
