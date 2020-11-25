@@ -3,9 +3,11 @@ Visualization of the data
 '''
 
 import numpy as np
+from sklearn.model_selection import train_test_split
+import json
 
 
-def calc_obs_vs_pred(funct, X_data, y_data, test_size):
+def calc_obs_vs_pred(funct, X_data, y_data, test_size, outdir='../'):
     '''
     The observation vs prediction plot
     '''
@@ -14,10 +16,10 @@ def calc_obs_vs_pred(funct, X_data, y_data, test_size):
     funct.fit(X_train, y_train)
     y_pred = funct.predict(X_test)
     y_pred_train = funct.predict(X_train)
-    np.savetxt('../test.' + str(test_size), 
+    np.savetxt(outdir + 'test.' + str(test_size), 
                 np.stack([y_test, y_pred]).transpose(), 
                 delimiter=' ', fmt='%.3f')
-    np.savetxt('../train.' + str(test_size), 
+    np.savetxt(outdir + 'train.' + str(test_size), 
                 np.stack([y_train, y_pred_train]).transpose(), 
                 delimiter=' ', fmt='%.3f')
 
@@ -41,15 +43,16 @@ def binarize_output(y_test, y_pred, threshold=None, save_to_file=False):
     nlabel = len(y_pred[0])
     for i, y in enumerate(y_pred):
         if threshold:
-            n_elem = len(np.where(y > threshold))
+            y_new = np.zeros(nlabel)
+            y_new[np.where(y > threshold)] = 1
         else:
             # thr ground truth is 0 or 1, so the sum gives number of elements
             # note that sum in on the y_test i.e. ground truth
             n_elem = y_test[i].sum()
-        
-        indice = y.argsort()[-n_elem:]
-        y_new = np.zeros(nlabel)
-        y_new[indice] = 1
+            indice = y.argsort()[-n_elem:]
+            y_new = np.zeros(nlabel)
+            y_new[indice] = 1
+
         y_bin.append(y_new)
 
     if save_to_file:
@@ -66,6 +69,22 @@ def binarize_output(y_test, y_pred, threshold=None, save_to_file=False):
                     np.stack(y_bin), delimiter=' ', fmt='%1i')
 
     return np.stack(y_bin)
+
+
+def insert_field(infile1='num_shell', infile2='MP_modulus_all.json', 
+                outfile='MP_modulus_v4.json'):
+    results = np.loadtxt(infile1, delimiter=' ')
+    with open(infile2, 'r') as f:
+        data = json.load(f)
+
+    for i, d in enumerate(data):
+        d['average_bond_length'] = results[i][2]
+        d['bond_length_std'] = results[i][3]    
+
+    with open(outfile, 'w') as f:
+        json.dump(data, f, indent=1)
+    
+    return
 
 
 if __name__ == '__main__':
