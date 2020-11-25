@@ -1,3 +1,8 @@
+'''
+This module is used for test runs, so the input is a single structure
+Batch calculation of the whole dataset, i.e. multiple input structures
+is done in data_explore.py
+'''
 
 import sys
 import numpy as np
@@ -7,13 +12,22 @@ import logging
 import itertools 
 from pymatgen import Structure, Lattice
 from sklearn.neighbors import KernelDensity
+from scipy.stats import wasserstein_distance
+from pyemd import emd
 
 
 def extend_structure(structure, max_dist=10):
     '''
+    Currently DEPRECATED! because that
+    pymatgen.Site.get_neighbors method automately create the extend supercell, 
+    so there is no need to extend the cell
+
     Make supercell based on the cutoff radius(i.e. the maximum distance).  
     Get all the inequivalent sites in a primitive cell inside a supercell.  
     Typically this primtive cell locates in the center of a supercell.
+
+    Usage: make supercell and find the 'centered' primitive cell
+    extend_stru, prim_cell_list = extend_structure(structure=struct, max_dist=max_dist)
 
     Args:
         struct: pymatgen structure
@@ -72,12 +86,12 @@ def get_raw_rdf(structure, prim_cell_list, max_dist=10):
         max_dist: cutoff of the atomic pair distance
         prim_cell_list: index of the atoms of the selected primitive cell
     Return:
-        A sortted list of atomic pair distance 
+        A sortted 1d list of atomic pair distance 
     '''
     raw_rdf = []
     for site in prim_cell_list:
         for pair_site in structure.get_neighbors(site=structure[site], r=max_dist):
-            raw_rdf.append(round(pair_site[1],3))
+            raw_rdf.append(round(pair_site[1], 3))
     return sorted(raw_rdf)
 
 
@@ -112,24 +126,6 @@ def get_rdf_and_atoms(structure, prim_cell_list, max_dist=10):
     return rdf_atoms
 
 
-def rdf_one_hot_conversion(raw_rdf, max_dist=10, npoints=100):
-    '''
-    convert rdf into one-hot encoder
-
-    Args:
-        raw_rdf: A sortted list of atomic pair distance 
-        max_dist: cutoff of the atomic pair distance
-        npoints: number of points for RDF
-    Return:
-        one hot coded rdf
-    '''
-    rdf_num = len(raw_rdf)
-    rdf_index = [ int(raw_rdf[i] / max_dist * npoints) for i in range(rdf_num) ]
-    rdf = np.zeros((rdf_num, npoints + 1))
-    rdf[np.arange(rdf_num),rdf_index] = 1
-    return rdf
-
-
 def rdf_histo(rdf_atoms, max_dist=10, bin_size=0.1):
     '''
     Convert the raw rdf with atoms to binned frequencies i.e. histogram
@@ -145,8 +141,7 @@ def rdf_histo(rdf_atoms, max_dist=10, bin_size=0.1):
     rdf_count = [ len(x) for x in rdf_atoms.values() ]
     rdf_len = np.array(rdf_count).max()
 
-    # converse the rdf_atom into rdf in each shell,
-    # and only keep the distance values
+    # converse the rdf_atom into rdf in each shell, and only keep the distance values
     # e.g. rdf_nn_shell[0] contain all the pair distance of the first NN
     rdf_nn_shells = []
     for x in range(rdf_len):
@@ -253,19 +248,57 @@ def rdf_kde(rdf_atoms, max_dist=10, bin_size=0.1):
     return np.array(rdf_bin)
 
 
-if __name__ == '__main__':
-    parse = argparse.ArgumentParser(description='Calculate RDF with atoms')
-    parse.add_argument('--input', type=str, required=False,
-                        help='Input CIF containing the crystal structure')
-    parse.add_argument('--output', type=str, default='rdf_bin',
-                        help='Output RDF')
-    parse.add_argument('--max_dist', type=float, default=10.0,
-                        help='Cutoff distance of the RDF')
+def shell_similarity(rdf_bin):
+    '''
+    Calculate the earth mover distance (EMD) between adjacent rdf shells  
+    i.e. the first value is the EMD between the first shell and second
 
-    args = parse.parse_args()
+    Args:
+        rdf_bin: calculated rdf, only rdf from function rdf_histo has been tested
+    Return:
+        np array of the similarity, with length (len(rdf_bin)-1)
+    '''
+    # first item set to 0.0, make shell_simi the same length as number of RDF shells
+    shell_simi = [0.0]
+    dist_matrix = np.ones((len(rdf_bin[0]), len(rdf_bin[0])))
+    np.fill_diagonal(dist_matrix, 0)
+    for i, r in enumerate(rdf_bin[1:]):
+        #shell_simi.append(wasserstein_distance(rdf_bin[i], r))
+        shell_simi.append(
+            emd(rdf_bin[i].astype('float64'), r.astype('float64'), 
+                dist_matrix.astype('float64'))
+        )
+    return np.array(shell_simi)
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Calculate RDF with atoms',
+                                    formatter_class=argparse.RawTextHelpFormatter)
+    parser.add_argument('--input', type=str, default=None,
+                        help='Input CIF containing the crystal structure')
+    parser.add_argument('--task', type=str, default='shell_similarity',
+                        help='what to be calculated: \n' +
+                            '   rdf: calculate RDF \n' +
+                            '   stack_rdf: RDF with different atomic pair \n' +
+                            '   shell_similarity: the similarity between two nearest shell \n' +
+                            '   raw_rdf: origin 1D RDF as sorted list'
+                      )
+
+    parser.add_argument('--output', type=str, default=None,
+                        help='Output RDF')
+    parser.add_argument('--max_dist', type=float, default=10.0,
+                        help='Cutoff distance of the RDF')
+    parser.add_argument('--trim', type=int, default=30,
+                        help='the number of shells for RDF, 0 means no trim')
+
+    args = parser.parse_args()
     infile = args.input
+    task = args.task
     outfile = args.output
     max_dist = args.max_dist
+    trim = args.trim
+
+    np.set_printoptions(threshold=sys.maxsize) # print the whole array
 
     if infile:
         # read a structure from cif to a pymatgen structure
@@ -277,32 +310,41 @@ if __name__ == '__main__':
                                         ['Na', 'Cl'], [[0.5, 0.5, 0.5], [0, 0, 0]])
         struct = nacl.get_primitive_structure()
     
+    # The 'prim_cell_list' is used with the 'extend_structure' function, when the function
+    # is deprecated, this variable is kept maybe useful in the future
     prim_cell_list = list(range(len(struct)))
-    rdf_atoms = get_rdf_and_atoms(structure=struct, prim_cell_list=prim_cell_list, 
-                                    max_dist=max_dist)
-    #rdf_bin = rdf_histo(rdf_atoms=rdf_atoms, max_dist=max_dist, bin_size=0.1)
-    rdf_bin, atom_pairs = rdf_stack_histo(rdf_atoms=rdf_atoms, structure=struct, 
-                                        max_dist=max_dist, bin_size=0.1)
 
-    np.set_printoptions(threshold=sys.maxsize) # print the whole array
-    # transpose the ndarray for import into the plot program
-    print(atom_pairs)
-    np.savetxt(outfile, rdf_bin.transpose(), delimiter=' ',fmt='%i')
+    if task == 'rdf':
+        rdf_atoms = get_rdf_and_atoms(structure=struct, prim_cell_list=prim_cell_list, 
+                                        max_dist=max_dist)
+        rdf_bin = rdf_histo(rdf_atoms=rdf_atoms, max_dist=max_dist, bin_size=0.1)
+        if outfile:
+            np.savetxt(outfile, rdf_bin.transpose(), delimiter=' ',fmt='%i')
+    
+    elif task == 'stack_rdf':
+        rdf_atoms = get_rdf_and_atoms(structure=struct, prim_cell_list=prim_cell_list, 
+                                        max_dist=max_dist)
+        rdf_bin, atom_pairs = rdf_stack_histo(rdf_atoms=rdf_atoms, structure=struct, 
+                                            max_dist=max_dist, bin_size=0.1)
+        if outfile:
+            print(atom_pairs)
+            # transpose the ndarray for import into the plot program
+            np.savetxt(outfile, rdf_bin.transpose(), delimiter=' ',fmt='%i')
+    
+    elif task == 'shell_similarity':
+        rdf_atoms = get_rdf_and_atoms(structure=struct, prim_cell_list=prim_cell_list, 
+                                        max_dist=max_dist)
+        rdf_bin = rdf_histo(rdf_atoms=rdf_atoms, max_dist=max_dist, bin_size=0.1)
+        if trim != 0:
+            rdf_bin = rdf_bin[:trim]
 
-
-# Blow is old version of the code
-# It seems that pymatgen.Site.get_neighbors method automately create the extend supercell, 
-# so there is no need to extend the cell
-if False:
-    # make supercell and find the 'centered' primitive cell
-    extend_stru, prim_cell_list = extend_structure(structure=struct, max_dist=max_dist)
-    # get RDF as sorted list
-    raw_rdf = get_raw_rdf(structure=extend_stru, prim_cell_list=prim_cell_list, max_dist=max_dist)
-    rdf = rdf_one_hot_conversion(raw_rdf=raw_rdf, max_dist=10, npoints=100)
-
-    with open ('raw_rdf', 'w') as f:
-        pprint.pprint(raw_rdf, f)
- 
-
-
+        shell_simi = shell_similarity(rdf_bin)
+        print(shell_simi)
+        if outfile:
+            np.savetxt(outfile, shell_simi, delimiter=' ', fmt='%.3f')
+    
+    elif task == 'raw_rdf':
+        raw_rdf = get_raw_rdf(structure=extend_stru, prim_cell_list=prim_cell_list, max_dist=max_dist)
+    else:
+        print('This task is not supported')
 
