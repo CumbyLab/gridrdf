@@ -2,9 +2,11 @@
 Visualization of the data
 '''
 
-import numpy as np
-from sklearn.model_selection import train_test_split
 import json
+import heapq
+import numpy as np
+import pandas as pd
+from sklearn.model_selection import train_test_split
 
 
 def calc_obs_vs_pred(funct, X_data, y_data, test_size, outdir='../'):
@@ -46,7 +48,7 @@ def binarize_output(y_test, y_pred, threshold=None, save_to_file=False):
             y_new = np.zeros(nlabel)
             y_new[np.where(y > threshold)] = 1
         else:
-            # thr ground truth is 0 or 1, so the sum gives number of elements
+            # the ground truth is 0 or 1, so the sum gives number of elements
             # note that sum in on the y_test i.e. ground truth
             n_elem = y_test[i].sum()
             indice = y.argsort()[-n_elem:]
@@ -59,34 +61,122 @@ def binarize_output(y_test, y_pred, threshold=None, save_to_file=False):
         # save the ground truth of the test data
         # the current workdir is usually the one has the RDF files
         # so ../ means the files will be saved in parent folder
-        np.savetxt('../multilabel_' + str(round(test_size,3)) + '_test', 
+        np.savetxt('../multilabel_' + str(threshold) + '_test', 
                     y_test, delimiter=' ', fmt='%1i')
         # save the prediction values of the test data
-        np.savetxt('../multilabel_' + str(round(test_size,3)) + '_pred', 
+        np.savetxt('../multilabel_' + str(threshold) + '_pred', 
                     y_pred, delimiter=' ', fmt='%.3f')
         # save the rounded values
-        np.savetxt('../multilabel_' + str(round(test_size,3)) + '_bin', 
+        np.savetxt('../multilabel_' + str(threshold) + '_bin', 
                     np.stack(y_bin), delimiter=' ', fmt='%1i')
 
     return np.stack(y_bin)
 
 
-def insert_field(infile1='num_shell', infile2='MP_modulus_all.json', 
-                outfile='MP_modulus_v4.json'):
-    results = np.loadtxt(infile1, delimiter=' ')
-    with open(infile2, 'r') as f:
-        data = json.load(f)
+def n_best_and_worst(y_test, y_pred, metrics_values, n_visual=100, 
+                    method='confusion_matrix'):
+    '''
+    Output the n best and n worst prediction for visualization purpose
+    This use heapq module to get n largest and smallest metrics values  
+    For that has n middle values, see function 'n_best_middle_worst'
 
-    for i, d in enumerate(data):
-        d['average_bond_length'] = results[i][2]
-        d['bond_length_std'] = results[i][3]    
+    Args:
+        y_test: test data   
+        y_pred: prediction data
+        metrics_values: the criterion to select n best and worst
+        n_visual: number of best and worst predictions 
+        method: how the y vector is visualized
+            original: original vectors, typically 78 elements
+            confusion_matrix: 
+    Return:
 
-    with open(outfile, 'w') as f:
-        json.dump(data, f, indent=1)
+    '''
+    # Give both index and value using heapq
+    n_large = heapq.nlargest(n_visual, enumerate(metrics_values), key=lambda x: x[1])
+    n_small = heapq.nsmallest(n_visual, enumerate(metrics_values), key=lambda x: x[1])
+
+    large_samples = []
+    small_samples = []
+    middle_samples = []
+    if method == 'original':
+        for i, m_value in n_large:
+            large_samples.append(y_test[i])
+            large_samples.append(y_pred[i])
+        for i, m_value in n_small:
+            small_samples.append(y_test[i])
+            small_samples.append(y_pred[i])
+        return np.stack(large_samples).transpose(), np.stack(small_samples).transpose()
+    elif method == 'confusion_matrix':
+        for i, m_value in n_large:
+            # confusion matrix, 0: true negetive,  1: false negative, 
+            #                   2: false positive, 3: true positive
+            large_samples.append(y_pred[i] * 2 + y_test[i])    
+        for i, m_value in n_small:
+            small_samples.append(y_pred[i] * 2 + y_test[i])
+        return np.stack(large_samples).transpose(), np.stack(small_samples).transpose()
+    else:
+        print('This method is not supported in n_best_and_worst')
+
+
+def n_best_middle_worst(y_test, y_pred, metrics_values, n_visual=100, 
+                    method='confusion_matrix'):
+    '''
+    Output the n best, n middle, and n worst prediction for visualization purpose
+
+    Args:
+        y_test: test data   
+        y_pred: prediction data
+        metrics_values: the criterion to select n best and worst
+        n_visual: number of best and worst predictions 
+        method: how the y vector is visualized
+            original: original vectors, typically 78 elements
+            confusion_matrix: 
+    Return:
+
+    '''
+    m_values = pd.DataFrame(metrics_values).sort_values(0)
+    middle_index = int(len(metrics_values) / 2)
+    middle_range = [ middle_index - int(n_visual / 2), middle_index + int(n_visual / 2)]
+
+    large_samples = []
+    small_samples = []
+    middle_samples = []
+    if method == 'original':
+        for i in m_values[-n_visual:].index.values:
+            large_samples.append(y_test[i])
+            large_samples.append(y_pred[i])
+        for i in m_values[middle_range[0]:middle_range[1]].index.values:
+            middle_samples.append(y_test[i])
+            middle_samples.append(y_pred[i])
+        for i in m_values[:n_visual].index.values:
+            small_samples.append(y_test[i])
+            small_samples.append(y_pred[i])
+        return np.stack(large_samples).transpose(), \
+                np.stack(middle_samples).transpose(), \
+                np.stack(small_samples).transpose()
     
-    return
+    elif method == 'confusion_matrix':
+        for i in m_values[-n_visual:].index.values:
+            # confusion matrix, 0: true negetive,  1: false negative, 
+            #                   2: false positive, 3: true positive
+            large_samples.append(y_pred[i] * 2 + y_test[i])    
+        for i in m_values[middle_range[0]:middle_range[1]].index.values:
+            middle_samples.append(y_pred[i] * 2 + y_test[i])
+        for i in m_values[:n_visual].index.values:
+            small_samples.append(y_pred[i] * 2 + y_test[i])
+        return np.stack(large_samples).transpose(), \
+                np.stack(middle_samples).transpose(), \
+                np.stack(small_samples).transpose()    
+
+    else:
+        print('This method is not supported in n_best_and_worst')
+
 
 
 if __name__ == '__main__':
-    pass
+    pettifor = ['Cs', 'Rb', 'K', 'Na', 'Li', 'Ba', 'Sr', 'Ca', 'Yb', 'Eu', 'Y',  'Sc', 'Lu', 'Tm', 'Er', 'Ho', 
+    'Dy', 'Tb', 'Gd', 'Sm', 'Pm', 'Nd', 'Pr', 'Ce', 'La', 'Zr', 'Hf', 'Ti', 'Nb', 'Ta', 'V',  'Mo', 
+    'W',  'Cr', 'Tc', 'Re', 'Mn', 'Fe', 'Os', 'Ru', 'Co', 'Ir', 'Rh', 'Ni', 'Pt', 'Pd', 'Au', 'Ag', 
+    'Cu', 'Mg', 'Hg', 'Cd', 'Zn', 'Be', 'Tl', 'In', 'Al', 'Ga', 'Pb', 'Sn', 'Ge', 'Si', 'B',  'Bi', 
+    'Sb', 'As', 'P',  'Te', 'Se', 'S', 'C', 'I', 'Br', 'Cl', 'N', 'O', 'F', 'H']
 
