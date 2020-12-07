@@ -2,6 +2,9 @@
 This module is used for test runs, so the input is a single structure
 Batch calculation of the whole dataset, i.e. multiple input structures
 is done in data_explore.py
+
+NB1: The 'prim_cell_list' variable is used with the 'extend_structure' function, 
+    when the function is deprecated, this variable is kept maybe useful in the future
 '''
 
 import sys
@@ -37,7 +40,7 @@ def extend_structure(structure, max_dist=10):
         prim_cell_list: a list of atom indexes of the centered primtive cell
     '''
     # get primitive structure 
-    # to drop the atomic species information, uncomment the following
+    # to drop the atomic species information, uncomment the following line
     #struct[:] = 'X'
     prim_stru = struct.get_primitive_structure()
 
@@ -77,14 +80,15 @@ def extend_structure(structure, max_dist=10):
 
 def get_raw_rdf(structure, prim_cell_list, max_dist=10):
     '''
-    Get pair distance in the supercell.  
-    One atoms must be in the selected primtive cell.  
+    Get pair distance in the structure at a given cutoff.
+    This is the raw pair distance values before binning.    
     Currently the atomic species information is dropped.  
 
     Args:
         structure: pymatgen structure, typically a supercell
         max_dist: cutoff of the atomic pair distance
-        prim_cell_list: index of the atoms of the selected primitive cell
+        prim_cell_list: index of the atoms of the selected primitive cell 
+            (See NB1 in the header of this file)
     Return:
         A sortted 1d list of atomic pair distance 
     '''
@@ -112,6 +116,7 @@ def get_rdf_and_atoms(structure, prim_cell_list, max_dist=10):
         structure: pymatgen structure, typically a supercell
         max_dist: cutoff of the atomic pair distance
         prim_cell_list: index of the atoms of the selected primitive cell
+            (See NB1 in the header of this file)
     Return:
         A sortted list of atomic pair distance, with atom species
     '''
@@ -258,17 +263,17 @@ def shell_similarity(rdf_bin):
     Return:
         np array of the similarity, with length (len(rdf_bin)-1)
     '''
-    # first item set to 0.0, make shell_simi the same length as number of RDF shells
-    shell_simi = [0.0]
+    shell_dist = np.zeros((len(rdf_bin), len(rdf_bin)))
     dist_matrix = np.ones((len(rdf_bin[0]), len(rdf_bin[0])))
     np.fill_diagonal(dist_matrix, 0)
-    for i, r in enumerate(rdf_bin[1:]):
-        #shell_simi.append(wasserstein_distance(rdf_bin[i], r))
-        shell_simi.append(
-            emd(rdf_bin[i].astype('float64'), r.astype('float64'), 
-                dist_matrix.astype('float64'))
-        )
-    return np.array(shell_simi)
+    for i, r1 in enumerate(rdf_bin):
+        for j, r2 in enumerate(rdf_bin):
+            if i < j:
+                dissim = emd(r1.astype('float64'), r2.astype('float64'), 
+                        dist_matrix.astype('float64'))
+                shell_dist[i,j] = dissim
+                shell_dist[j,i] = dissim
+    return shell_dist
 
 
 if __name__ == '__main__':
@@ -283,7 +288,6 @@ if __name__ == '__main__':
                             '   shell_similarity: the similarity between two nearest shell \n' +
                             '   raw_rdf: origin 1D RDF as sorted list'
                       )
-
     parser.add_argument('--output', type=str, default=None,
                         help='Output RDF')
     parser.add_argument('--max_dist', type=float, default=10.0,
