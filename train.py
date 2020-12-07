@@ -1,8 +1,8 @@
 
 import os
+import sys
 import json
 import argparse
-import gzip, tarfile
 import numpy as np
 import pandas as pd
 from pymatgen import Structure
@@ -16,56 +16,11 @@ from sklearn.preprocessing import StandardScaler
 from sklearn import metrics
 from pyemd import emd
 
-from data_explore import composition_one_hot, rdf_trim, rdf_flatten, \
-                        batch_shell_similarity, bonding_matrix
-from visualization import calc_obs_vs_pred, binarize_output
+from data_explore import rdf_trim, rdf_flatten, batch_shell_similarity
+from composition import composition_one_hot, bonding_matrix
+from visualization import calc_obs_vs_pred, binarize_output, n_best_middle_worst
 from extendRDF import shell_similarity
-
-
-def rdf_read(data, x_dir, zip_file=False):
-    '''
-    Read the rdf files from the dir.  
-
-    Args:
-        data: modulus data from materials project
-        x_dir: the dir has all (and only) the rdf files
-        zip_file: if the RDFs are gzip file
-    Return:
-        a list of np array (rdfs) with different length, 
-        first dimension is the number of
-        samples, and the second dimension is the flatten 1D rdf
-    '''
-    all_rdf = []
-    for d in data:
-        rdf_file = x_dir + '/' + d['task_id']
-        if zip_file:
-            with gzip.open(rdf_file + '.gz', 'r') as f:
-                rdf = np.loadtxt(f, delimiter=' ')
-        else:
-            rdf = np.loadtxt(rdf_file, delimiter=' ')
-        all_rdf.append(rdf)
-    return all_rdf
-
-
-def rdf_read_tar(data, x_file):
-    '''
-    Read the rdf files from a tar file.  
-
-    Args:
-        data: modulus data from materials project
-        x_file: the tar file has rdfs
-    Return:
-        a list of np array (rdfs) with different length, 
-        first dimension is the number of
-        samples, and the second dimension is the flatten 1D rdf
-    '''
-    all_rdf = []
-    with tarfile.open(x_file, 'r:*') as tar:
-        for d in data:
-            rdf_file = d['task_id']
-            rdf = np.loadtxt(tar.extractfile(rdf_file), delimiter=' ')
-            all_rdf.append(rdf)
-    return all_rdf
+from rdf_io import rdf_read, shell_similarity_read
 
 
 def krr_grid_search(alpha, gamma, X_data, y_data, test_size=0.2):
@@ -123,17 +78,42 @@ def int_or_str(value):
         return value
 
 
-def earth_mover_dist(y_test, y_pred):
+def emd_of_two_compositions(y_test, y_pred, pettifor_index=True):
     '''
+    Calcalate the earth mover's distance of two compositions, the composition should be 
+    a 78-element vector, as the similarity_matrix is 78x78 matrix in the order of  
+    atom numbers
+
+    Args:
+        y_test: test data with dimension n*78, the second dimension is by default in the  
+            pettifor order, see 'composition_one_hot' function in data_explore.py
+        y_pred: prediction data
+        pettifor_index: whether transform the element order from the peroidic table
+            number to Pettifor number
+    Return:
+
     '''
     dist = []
-    dist_matrix = pd.read_csv('../similarity_matrix.csv', index_col='ionA').values
-    dist_matrix = dist_matrix.copy(order='C')
-    for i,y in enumerate(y_test):
-        dist.append(emd(y.astype('float64'), y_pred[i].astype('float64'), 
-                    dist_matrix.astype('float64')))
+    elem_similarity_file = os.path.join(sys.path[0], 'similarity_matrix.csv')
+    dist_matrix = pd.read_csv(elem_similarity_file, index_col='ionA')
 
-    return np.stack(dist).mean()
+    if pettifor_index:
+        pettifor = ['Cs', 'Rb', 'K', 'Na', 'Li', 'Ba', 'Sr', 'Ca', 'Yb', 'Eu', 'Y',  'Sc', 'Lu', 'Tm', 'Er', 'Ho', 
+            'Dy', 'Tb', 'Gd', 'Sm', 'Pm', 'Nd', 'Pr', 'Ce', 'La', 'Zr', 'Hf', 'Ti', 'Nb', 'Ta', 'V',  'Mo', 
+            'W',  'Cr', 'Tc', 'Re', 'Mn', 'Fe', 'Os', 'Ru', 'Co', 'Ir', 'Rh', 'Ni', 'Pt', 'Pd', 'Au', 'Ag', 
+            'Cu', 'Mg', 'Hg', 'Cd', 'Zn', 'Be', 'Tl', 'In', 'Al', 'Ga', 'Pb', 'Sn', 'Ge', 'Si', 'B',  'Bi', 
+            'Sb', 'As', 'P',  'Te', 'Se', 'S', 'C', 'I', 'Br', 'Cl', 'N', 'O', 'F', 'H']
+        dist_matrix = dist_matrix.reindex(columns=pettifor, index=pettifor) 
+    dist_matrix = dist_matrix.values
+
+    # the earth mover's distance package need order C and float64
+    dist_matrix = dist_matrix.copy(order='C')
+    for y_t, y_p in zip(y_test, y_pred):
+        dist.append(emd(y_t.astype('float64'), y_p.astype('float64'), 
+                    dist_matrix.astype('float64')))
+    
+    #print(len(y_pred), np.count_nonzero(np.array(dist)))    
+    return np.stack(dist)
 
 
 def bond_to_atom(data, nelem=78):
@@ -162,7 +142,7 @@ if __name__ == '__main__':
                                     formatter_class=argparse.RawTextHelpFormatter)
 
     # input files of the training dataset
-    parser.add_argument('--xdir', type=str, default='./',
+    parser.add_argument('--rdf_dir', type=str, default='./',
                         help='All the rdf files for training \n' +
                             '   default is current work dir'
                         )
@@ -191,6 +171,12 @@ if __name__ == '__main__':
                             '   average_coordination \n' +
                             '   number_of_atoms: in the unit cell \n' +
                             '   bonding_type:  \n' +
+                            '   average_coordination:  \n' +
+                            '   average_bond_length:  \n' +
+                            '   bond_length_std:  \n' +
+                            '   ave_bond_std:  \n' +
+                            '   coord_num_std:  \n' +
+                            '   num_sg_operation:  \n' +
                             '   number_of_species: number of atomic species of the compound '
                         )
     parser.add_argument('--output', type=str, default='test_size_depend',
@@ -227,7 +213,7 @@ if __name__ == '__main__':
                         )
 
     args = parser.parse_args()
-    x_dir = args.xdir
+    rdf_dir = args.rdf_dir
     y_file = args.input_file
     target = args.target
     metrics_method = args.metrics
@@ -236,28 +222,31 @@ if __name__ == '__main__':
     trim = int_or_str(args.trim)
     shell_similarity = args.shell_similarity
 
-    # prepare the dataset and split to train and test
+    # prepare the dataset 
     with open (y_file,'r') as f:
         data = json.load(f)
     if output != 'random_guess':
-        if 'tar' in x_dir:
-            all_rdf = rdf_read_tar(data, x_dir)
+        if 'tar' in rdf_dir:
+            all_rdf = rdf_read_tar(data, rdf_dir)
         else:
-            all_rdf = rdf_read(data, x_dir)
+            all_rdf = rdf_read(data, rdf_dir)
         
         all_rdf = rdf_trim(all_rdf, trim=trim)
 
         if shell_similarity == 'none':
             X_data = rdf_flatten(all_rdf)
         elif shell_similarity == 'append':
-            X_data = batch_shell_similarity(all_rdf, method='append')
+            #X_data = batch_shell_similarity(all_rdf, method='append')
+            all_rdf = rdf_flatten(all_rdf)
+            all_shell_simi = shell_similarity_read(data, rdf_dir)
+            X_data = np.hstack((all_rdf, all_shell_simi))
         elif shell_similarity == 'only':
-            X_data = batch_shell_similarity(all_rdf, method='only')
+            #X_data = batch_shell_similarity(all_rdf, method='only')
+            X_data = shell_similarity_read(data, rdf_dir)
         else:
             print('Wrong shell similarity argument')
 
-    np.savetxt('../X_data', X_data, delimiter=' ',fmt='%.3f')
-
+    #np.savetxt('../X_data', X_data, delimiter=' ',fmt='%.3f')
     # target_type can be continuous categorical ordinal
     # or multi-cont, multi-cate, multi-ord
     target_type = None
@@ -320,6 +309,16 @@ if __name__ == '__main__':
     elif target == 'bond_length_std':
         target_type = 'continuous'
         y_data = np.array([ x['bond_length_std'] for x in data ])
+        y_data = np.log10(y_data + 1)
+    elif target == 'ave_bond_std':
+        target_type = 'continuous'
+        y_data = np.array([ x['ave_bond_std'] for x in data ])
+    elif target == 'coord_num_std':
+        target_type = 'continuous'
+        y_data = np.array([ x['coord_num_std'] for x in data ])
+    elif target == 'num_sg_operation':
+        target_type = 'continuous'
+        y_data = np.array([ x['num_sg_operation'] for x in data ])
     else:
         print('This target is not support, please check help')
         exit()
@@ -368,8 +367,8 @@ if __name__ == '__main__':
                     pass
                 else:
                     print('This metrics is not support for multi-continuous data')
-            elif target_type == 'categorical'and target == 'type_of_elements':
-                # now only implemented for type of elements
+            elif target_type == 'categorical'and target == 'number_of_species':
+                # now only implemented for number of species
                 #y_pred[np.where(y_pred > 5)] = 5
                 #y_pred = list(map(str, list(np.int64(y_pred + 0.5))))
                 #print(type(y_test), type(y_test[0]), y_test[0], type(y_pred), type(y_pred[0]), y_pred[0])
@@ -387,7 +386,8 @@ if __name__ == '__main__':
                             round(metrics.label_ranking_average_precision_score(y_test, y_pred), 3),
                             round(metrics.label_ranking_loss(y_test, y_pred), 3) ]
                 elif metrics_method == 'emd':
-                    pred_acc = earth_mover_dist(y_test, y_pred)
+                    y_bin = binarize_output(y_test, y_pred, threshold=None, save_to_file=False)
+                    pred_acc = emd_of_two_compositions(y_test, y_bin).mean()
                 else:
                     print('This metrics is not support for multi-label data')
             elif target_type == 'ordinal':
@@ -453,15 +453,48 @@ if __name__ == '__main__':
         calc_learning_curve(funct=funct, X_data=X_data, y_data=y_data, test_size=test_size)
 
     elif output == 'random_guess':
-        nclass = 5
-        max_class = 3
+        if target == 'number_of_species':
+            nclass = 5
+            max_class = 3
 
-        y_pred_const = np.full(len(y_data), max_class)
-        pred_acc_const = metrics.mean_absolute_error(y_data, y_pred_const)
-        y_pred_rand = np.int64(np.random.rand(len(y_data)) * nclass + 1)
-        pred_acc_rand = metrics.mean_absolute_error(y_data, y_pred_rand)
+            y_pred_const = np.full(len(y_data), max_class)
+            pred_acc_const = metrics.mean_absolute_error(y_data, y_pred_const)
+            y_pred_rand = np.int64(np.random.rand(len(y_data)) * nclass + 1)
+            pred_acc_rand = metrics.mean_absolute_error(y_data, y_pred_rand)
 
-        print('constant {} ; random {}'.format(pred_acc_const, pred_acc_rand))
+            print('constant {} ; random {}'.format(pred_acc_const, pred_acc_rand))
+        
+        elif target == 'type_of_elements':
+            nelem = 78
+            y_pred_rand = []
+            for i in range(len(y_data)):
+                y_rand = np.zeros(nelem)
+                for j in np.random.randint(0, high=nelem, size=3):
+                    y_rand[j] = 1
+                y_pred_rand.append(y_rand)
+
+            print(emd_of_two_compositions(y_data, y_pred_rand, pettifor_index=True).mean())
+
+    elif output == 'emd_visual':
+        X_train, X_test, y_train, y_test = \
+                train_test_split(X_data, y_data, test_size=test_size, random_state=1)
+        funct.fit(X_train, y_train)
+        y_pred = funct.predict(X_test)
+        
+        for threshold in np.linspace(0.2, 0.6, 5):
+            y_bin = binarize_output(y_test, y_pred, threshold=threshold, save_to_file=False)
+            pred_acc = emd_of_two_compositions(y_test, y_bin)
+            np.savetxt('../dist_histo_' + str(threshold), pred_acc, delimiter=' ', fmt='%.3f')
+            print(pred_acc.mean())
+            
+            large_samples, middle_samples, small_samples = \
+                    n_best_middle_worst(y_test, y_bin, metrics_values=pred_acc, n_visual=100)
+            np.savetxt('../large_sample_' + str(threshold), large_samples,
+                        delimiter=' ', fmt='%.3f')
+            np.savetxt('../middle_sample_' + str(threshold), middle_samples, 
+                        delimiter=' ', fmt='%.3f')            
+            np.savetxt('../small_sample_' + str(threshold), small_samples, 
+                        delimiter=' ', fmt='%.3f')
 
     else:
         print('This output is not supported')
