@@ -258,7 +258,7 @@ def rdf_value_stat(data, dir):
     return
 
 
-def rdf_similarity(data, all_rdf, order='symmetry'):
+def rdf_similarity(data, all_rdf, order=None, debug=True):
     '''
     Calculate the earth mover's distance between two RDFs
     Current support vanilla rdf and extend rdf
@@ -268,25 +268,67 @@ def rdf_similarity(data, all_rdf, order='symmetry'):
         data: data from json
         all_rdf: 
         order: how the compounds are arranged
+            None: using the order in the josn 'data'
             symmetry: in the order of space group number, typically for 
                 influence of distortion
             lattice: in the order of lattice constant
+        debug: if true, output some selected values 
+            this is used to investigate the lattice parameter effect
     Return:
         a pandas dataframe with all pairwise distance
         for multiple shells rdf the distance is the mean value of all shells
     '''
     if len(all_rdf[0].shape) == 2:
         # typically for extend RDF
-        df = pd.DataFrame([])
-        for i1, d1 in enumerate(data):
+        if debug:
+            i1 = 259 # use no 259 compound to compare to others
+            '''
+            df = pd.DataFrame([])
             for i2, d2 in enumerate(data):
-                if i1 < i2:
+                for j in [0, 2, 6, 12, 14, 20, 26, 28]:
+                    df.loc[d2['task_id'], str(j)] = wasserstein_distance(all_rdf[i1][j], all_rdf[i2][j])
+            
+            dist_list = []
+            mp_indice = []
+            for i2 in [205, 229, 239, 266, 294, 309]:
+                mp_indice.append(data[i2]['task_id'])
+                rdf_len = np.array([len(all_rdf[i1]), len(all_rdf[i2])]).min()
+                shell_distances = []
+                for j in range(rdf_len):
+                    shell_distances.append(wasserstein_distance(all_rdf[i1][j], all_rdf[i2][j]))
+                dist_list.append(shell_distances)
+            df = pd.DataFrame(dist_list, index=mp_indice).transpose()
+            
+            rdf0s = []
+            nums = [119, 135, 178, 227, 245, 259, 295, 325, 339, 347, 359]
+            for i in nums:
+                rdf0s.append(all_rdf[i][0])
+            df = pd.DataFrame(rdf0s, index=nums).transpose()
+            '''
+            nums = [0, 259, 544]
+            df = pd.DataFrame([])
+            for i1 in nums:
+                a1 = Structure.from_str(data[i1]['cif'], fmt='cif').lattice.a
+                for i2, d in enumerate(data):
+                    a2 = Structure.from_str(data[i2]['cif'], fmt='cif').lattice.a
                     rdf_len = np.array([len(all_rdf[i1]), len(all_rdf[i2])]).min()
                     shell_distances = []
                     for j in range(rdf_len):
                         shell_distances.append(wasserstein_distance(all_rdf[i1][j], all_rdf[i2][j]))
-                    df.loc[d1['task_id'], d2['task_id']] = np.array(shell_distances).mean()
-                    df.loc[d2['task_id'], d1['task_id']] = np.array(shell_distances).mean()
+                    df.loc[data[i2]['task_id'], data[i1]['task_id'] + 'lattice'] = a1 - a2
+                    df.loc[data[i2]['task_id'], data[i1]['task_id']] = np.array(shell_distances).mean()            
+
+        else:
+            df = pd.DataFrame([])
+            for i1, d1 in enumerate(data):
+                for i2, d2 in enumerate(data):
+                    if i1 < i2:
+                        rdf_len = np.array([len(all_rdf[i1]), len(all_rdf[i2])]).min()
+                        shell_distances = []
+                        for j in range(rdf_len):
+                            shell_distances.append(wasserstein_distance(all_rdf[i1][j], all_rdf[i2][j]))
+                        df.loc[d1['task_id'], d2['task_id']] = np.array(shell_distances).mean()
+                        df.loc[d2['task_id'], d1['task_id']] = np.array(shell_distances).mean()
     elif len(all_rdf[0].shape) == 1:
         # typically for vanilla RDF
         df = pd.DataFrame([])
@@ -303,6 +345,10 @@ def rdf_similarity(data, all_rdf, order='symmetry'):
             struct = Structure.from_str(d['cif'], fmt='cif')
             df2.loc[d['task_id']] = struct.get_space_group_info()[1]
         new_index = df2.sort_values('sg').index.values
+
+        df = df.reindex(columns=new_index, index=new_index, fill_value=0)
+        np.fill_diagonal(df.values, 0)
+
     elif order == 'lattice':
         df2 = pd.DataFrame(columns=['lattice'])
         for d in data:
@@ -310,8 +356,8 @@ def rdf_similarity(data, all_rdf, order='symmetry'):
             df2.loc[d['task_id']] = struct.lattice.a
         new_index = df2.sort_values('lattice').index.values
 
-    df = df.reindex(columns=new_index, index=new_index, fill_value=0)
-    np.fill_diagonal(df.values, 0)
+        df = df.reindex(columns=new_index, index=new_index, fill_value=0)
+        np.fill_diagonal(df.values, 0)
     
     return df 
 
