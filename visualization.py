@@ -26,7 +26,7 @@ def calc_obs_vs_pred(funct, X_data, y_data, test_size, outdir='../'):
                 delimiter=' ', fmt='%.3f')
 
 
-def binarize_output(y_test, y_pred, threshold=None, save_to_file=False):
+def binarize_output(y_test, y_pred, threshold=None, nelem=None, save_to_file=False):
     '''
     Make the multilabe output decimals into 0 or 1
     according to the number of elements or a threshold
@@ -37,6 +37,8 @@ def binarize_output(y_test, y_pred, threshold=None, save_to_file=False):
         threshold: above this value the output will be set to 1 and others 0
             If 'None', use the number (n) of non-zero labels in the ground
             truth, i.e. the top n largest values are set to 1 and others 0
+        nelem: if None, use the number elements in the ground truth
+            or given as an integer value
         save_to_file:
     Return:
         y_bin: a numpy array of binarized prediction
@@ -50,7 +52,11 @@ def binarize_output(y_test, y_pred, threshold=None, save_to_file=False):
         else:
             # the ground truth is 0 or 1, so the sum gives number of elements
             # note that sum in on the y_test i.e. ground truth
-            n_elem = y_test[i].sum()
+            if nelem:
+                n_elem = nelem
+            else:
+                n_elem = y_test[i].sum()
+
             indice = y.argsort()[-n_elem:]
             y_new = np.zeros(nlabel)
             y_new[indice] = 1

@@ -96,6 +96,7 @@ def emd_of_two_compositions(y_test, y_pred, pettifor_index=True):
     dist = []
     elem_similarity_file = os.path.join(sys.path[0], 'similarity_matrix.csv')
     dist_matrix = pd.read_csv(elem_similarity_file, index_col='ionA')
+    dist_matrix = 1 / (np.log10(1 / dist_matrix + 1))
 
     if pettifor_index:
         pettifor = ['Cs', 'Rb', 'K', 'Na', 'Li', 'Ba', 'Sr', 'Ca', 'Yb', 'Eu', 'Y',  'Sc', 'Lu', 'Tm', 'Er', 'Ho', 
@@ -296,7 +297,6 @@ if __name__ == '__main__':
     elif target == 'type_of_elements':
         target_type = 'multi-cate'
         y_data, elem_symbols = composition_one_hot(data=data, only_type=True)
-        print(elem_symbols)
     elif target == 'bonding_type':
         target_type = 'multi-cate'
         y_data = bonding_matrix(data=data)
@@ -386,8 +386,11 @@ if __name__ == '__main__':
                             round(metrics.label_ranking_average_precision_score(y_test, y_pred), 3),
                             round(metrics.label_ranking_loss(y_test, y_pred), 3) ]
                 elif metrics_method == 'emd':
-                    y_bin = binarize_output(y_test, y_pred, threshold=None, save_to_file=False)
+                    #for nelem in range(2,8):
+                    y_bin = binarize_output(y_test, y_pred, threshold=None, 
+                                            nelem=None, save_to_file=False)
                     pred_acc = emd_of_two_compositions(y_test, y_bin).mean()
+                    #print(test_size, nelem, pred_acc)
                 else:
                     print('This metrics is not support for multi-label data')
             elif target_type == 'ordinal':
