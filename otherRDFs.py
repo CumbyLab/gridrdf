@@ -2,6 +2,7 @@
 Other types of RDF as benchmark to the extend RDF
 '''
 
+
 import numpy as np
 from pymatgen import Structure
 try:
@@ -23,7 +24,7 @@ def origin_rdf_histo(data, max_dist=10, bin_size=0.1):
     Args:
         data: input data from Materials Project
     Return:
-
+        The RDFs are saved into files
     '''
     rdf_fn = RadialDistributionFunction(cutoff=max_dist, bin_size=bin_size)
     for d in data:
@@ -34,7 +35,7 @@ def origin_rdf_histo(data, max_dist=10, bin_size=0.1):
     return
 
 
-def partial_rdf():
+def partial_rdf(data, max_dist=10, bin_size=0.1):
     '''
     Partial RDF (implemented in matminer)
 
@@ -44,12 +45,18 @@ def partial_rdf():
     Physical Review B 89(20).205118
 	
     Args:
-
+        data: input data from Materials Project
     Return:
-
+        The RDFs are saved into files
     '''
-    pass
-
+    prdf_fn = PartialRadialDistributionFunction(cutoff=max_dist, bin_size=bin_size)
+    for d in data:
+        struct = Structure.from_str(d['cif'], fmt='cif')
+        prdf_fn.fit([struct])
+        prdf_bin = prdf_fn.featurize(struct)
+        outfile = d['task_id']
+        np.savetxt(outfile, prdf_bin, delimiter=' ', fmt='%.3f')
+    return
 
 
 def mbtr_rdf():
