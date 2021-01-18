@@ -115,12 +115,20 @@ def rdf_trim(all_rdf, trim='minimum'):
     elif isinstance(trim, int):
         for i, rdf_len in enumerate(rdf_lens):
             if rdf_len < trim:
-                nbins = len(all_rdf[i][0])
-                all_rdf[i] = np.append( all_rdf[i], 
-                                        [[0.0] * nbins] * (trim-rdf_len), 
-                                        axis=0 )
+                a = int ( trim / rdf_len)
+                b = trim % rdf_len
+                if a != 1:
+                    all_rdf[i] = np.tile(all_rdf[i], a)
+                if b != 0:
+                    if len(all_rdf[0].shape) == 2:
+                        nbins = len(all_rdf[i][0])
+                        all_rdf[i] = np.append( all_rdf[i], [[0.0] * nbins] * b, axis=0 )
+                    elif len(all_rdf[0].shape) == 1:
+                        all_rdf[i] = np.append( all_rdf[i], [0.0] * b )
             else:
                 all_rdf[i] = all_rdf[i][:trim]
+
+#            print(len(all_rdf[i]))
     elif trim == 'none':
         pass 
     else:
@@ -270,7 +278,7 @@ def rdf_value_stat(data, dir):
     return
 
 
-def rdf_similarity(data, all_rdf, order=None, method='emd'):
+def rdf_similarity_matrix(data, all_rdf, order=None, method='emd'):
     '''
     Calculate the earth mover's distance between two RDFs
     Current support vanilla rdf and extend rdf
@@ -299,8 +307,6 @@ def rdf_similarity(data, all_rdf, order=None, method='emd'):
         dist_matrix = dist_matrix_1d(len(all_rdf[0][0]))
         for i1, d1 in enumerate(tqdm(data, desc='rdf similarity', mininterval=60)):
             for i2, d2 in enumerate(data):
-                #if df.empty:
-                #    df.loc[d1['task_id'], d2['task_id']] = None
                 if i1 <= i2:
                     rdf_len = np.array([len(all_rdf[i1]), len(all_rdf[i2])]).min()
                     shell_distances = []
@@ -318,14 +324,13 @@ def rdf_similarity(data, all_rdf, order=None, method='emd'):
                         # add a small number 1e-11 to avoid dividing by zero
                         df.loc[d1['task_id'], d2['task_id']] = 1.0 / (np.array(shell_distances).mean() + 1e-11)
                         df.loc[d2['task_id'], d1['task_id']] = 1.0 / (np.array(shell_distances).mean() + 1e-11)    
+
     elif len(all_rdf[0].shape) == 1:
         # typically for vanilla RDF
         df = pd.DataFrame([])
         dist_matrix = dist_matrix_1d(len(all_rdf[0]))
         for i1, d1 in enumerate(tqdm(data, desc='rdf similarity', mininterval=60)):
             for i2, d2 in enumerate(data):
-                #if df.empty:
-                #    df.loc[d1['task_id'], d2['task_id']] = None
                 if i1 <= i2:
                     if method == 'emd':
                         #shell_distance = wasserstein_distance(all_rdf[i1], all_rdf[i2])
@@ -361,12 +366,6 @@ def rdf_similarity(data, all_rdf, order=None, method='emd'):
     return df 
 
 
-def rdf_similarity_matrix():
-    '''
-    Calculate the matrix of all rdfs, then check if positive defined
-    '''
-    
-
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Data explore',
                                     formatter_class=argparse.RawTextHelpFormatter)
@@ -386,11 +385,14 @@ if __name__ == '__main__':
                             '   bonding_type: \n' +
                             '   shell_similarity: \n' +
                             '   rdf_similarity: \n' +
+                            '   rdf_similarity_matrix: \n' +
                             '   rdf_similarity_visualize: \n' +
                             '   subset: select a subset which have specified elements'
                       )
     parser.add_argument('--elem_list', type=str, default='O',
                         help='only used for subset task')
+    parser.add_argument('--baseline_id', type=str, default='mp-10',
+                        help='only used for rdf_similarity task, all other rdfs compared to this')
     parser.add_argument('--max_dist', type=float, default=10.0,
                         help='Cutoff distance of the RDF')
 
@@ -401,6 +403,7 @@ if __name__ == '__main__':
     task = args.task
 
     elem_list = args.elem_list
+    baseline_id = args.baseline_id
     max_dist = args.max_dist
 
     with open(infile,'r') as f:
@@ -453,23 +456,32 @@ if __name__ == '__main__':
             json.dump(subset, f, indent=1)
 
     elif task == 'rdf_similarity':
+        rdf_1 = np.loadtxt(rdf_dir + '/' + baseline_id, delimiter=' ')
+        df = pd.DataFrame([])
+        dist_matrix = dist_matrix_1d(len(rdf_1[0]))
+
         with open (infile,'r') as f:
             data = json.load(f)
 
-        all_rdf = rdf_read(data, rdf_dir)
-        for similar_measure in ['emd']:
-            df = rdf_similarity(data, all_rdf, method=similar_measure, order=None)
-            df.to_csv(output_file + '_' + similar_measure + '.csv')
+        for d in tqdm(data, desc='rdf similarity', mininterval=60):
+            rdf_2 = np.loadtxt(rdf_dir + '/' + d['task_id'], delimiter=' ')
+            rdf_len = np.array([len(rdf_1), len(rdf_2)]).min()
+            shell_distances = []
+            for j in range(rdf_len):
+                shell_distances.append(emd(rdf_1[j], rdf_2[j], dist_matrix))
+            df.loc[d['task_id'], baseline_id] = np.array(shell_distances).mean()
+
+        df.to_csv(output_file + '_' + baseline_id + '_emd.csv')
 
     elif task == 'rdf_similarity_matrix':
         with open (infile,'r') as f:
             data = json.load(f)
 
         all_rdf = rdf_read(data, rdf_dir)
-        all_rdf = rdf_trim(all_rdf)
+        #all_rdf = rdf_trim(all_rdf, 100)
         #all_rdf = rdf_flatten(all_rdf)
         for similar_measure in ['emd']:
-            df = rdf_similarity(data, all_rdf, method=similar_measure, order=None)
+            df = rdf_similarity_matrix(data, all_rdf, method=similar_measure, order=None)
             df.to_csv(output_file + '_' + similar_measure + '_similar_matrix.csv')
 
     elif task == 'rdf_similarity_visualize':

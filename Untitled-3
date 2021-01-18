@@ -1,0 +1,40 @@
+
+increasing threshold
+
+803.9777750542411
+876.9000462894463
+1034.3922819657853
+1123.529680663232
+1186.6620689496183
+
+
+
+Training size 0.1 ; Training samples 1187 ; Metrics 788.2346915397915
+Training size 0.2 ; Training samples 2375 ; Metrics 905.553287810362
+Training size 0.3 ; Training samples 3564 ; Metrics 963.5307234288034
+Training size 0.4 ; Training samples 4752 ; Metrics 1000.4506155616608
+Training size 0.5 ; Training samples 5940 ; Metrics 1008.5732767024746
+Training size 0.6 ; Training samples 7128 ; Metrics 1029.691712150015
+Training size 0.7 ; Training samples 8316 ; Metrics 1028.3397993010567
+Training size 0.8 ; Training samples 9504 ; Metrics 1034.3922819657853
+Training size 0.9 ; Training samples 10692 ; Metrics 1031.968600093448
+
+
+5229 5532 19443 755300
+
+
+
+mp-5020	        BaTiO3	R3m	-3.502	0	2.621	67.97	5	5.697	
+mp-5777	        BaTiO3	Amm2	-3.501	0	2.373	67.775	5	5.713	
+mp-5986	        BaTiO3	P4mm	-3.498	0.003	1.830	67.36	5	5.749	
+mp-558125	BaTiO3	C2221	-3.498	0.003	2.081	413.715	30	5.616	
+mp-5933	        BaTiO3	P63/mmc	-3.493	0.008	1.726	408.932	30	5.682	
+mp-2998	        BaTiO3	Pm3m	-3.487	0.015	1.725	65.723	5	5.892	
+mp-644497	BaTiO3	Amm2	-2.787	0.714	0.547	111.543	5	3.472	
+mp-995191	BaTiO3	Amm2	-1.695	1.807	0.000	85.458	5	4.531	
+mp-19990	BaTiO3	P4/mmm	-1.694	1.807	0.000	85.164	5	4.547	
+mp-504715	BaTiO3	Pm3m	-0.418	3.083	0.000	100.489	5	3.853	
+
+
+
+['mp-5020', 'mp-5777', 'mp-5986', 'mp-558125', 'mp-5933', 'mp-2998', 'mp-644497', 'mp-995191', 'mp-19990', 'mp-504715']

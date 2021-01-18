@@ -1,6 +1,7 @@
 
 import numpy as np
 import gzip, tarfile
+from tqdm import tqdm
 
 
 def rdf_read(data, rdf_dir, zip_file=False):
@@ -17,7 +18,7 @@ def rdf_read(data, rdf_dir, zip_file=False):
         samples, and the second dimension is the flatten 1D rdf
     '''
     all_rdf = []
-    for d in data:
+    for d in tqdm(data, desc='rdf read', mininterval=60):
         rdf_file = rdf_dir + '/' + d['task_id']
         if zip_file:
             with gzip.open(rdf_file + '.gz', 'r') as f:
@@ -26,6 +27,7 @@ def rdf_read(data, rdf_dir, zip_file=False):
             rdf = np.loadtxt(rdf_file, delimiter=' ')
         all_rdf.append(rdf)
     return all_rdf
+
 
 def shell_similarity_read(data, rdf_dir):
     '''
