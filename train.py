@@ -188,6 +188,7 @@ if __name__ == '__main__':
                             '   confusion_maxtrix: histogram for multt-label output \n' +
                             '   grid_search: cross validation grid search for meta parameters \n' +
                             '   randon_guess: difference between ground truth and random guess/constant \n' +
+                            '   emd_visual:  \n' +
                             '   learning_curve: the calculated learning curve will be stored \n' +
                             '       in ../learning_curve'
                         )

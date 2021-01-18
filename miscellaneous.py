@@ -1,16 +1,20 @@
 
+'''
+for rdf in smooth_rdf vanilla_rdf ; do cd $rdf ; for file in pero_distortion pero_lattice rp_srtio3 ; do python ../../../descriptors/data_explore.py --input_file  ../$file.json --task rdf_similarity  --output_file ../${file}_$rdf ; done ; cd .. ; done 
+'''
+
 import json
 import math
 import numpy as np
 import pandas as pd
 from collections import Counter
-from pymatgen import Structure
+from pymatgen import Structure, Lattice
+from pyemd import emd_with_flow
 
 try:
     from ElMD import ElMD
-    from pyemd import emd_with_flow
 except:
-    print('EMD module not installed')
+    print('Element-EMD module not installed')
 
 
 def remove_nan():
@@ -123,24 +127,93 @@ def make_distorted_perovskite():
     cif = "# generated using pymatgen\ndata_SrTiO3\n_symmetry_space_group_name_H-M   'P 1'\n_cell_length_a   3.94513000\n_cell_length_b   3.94513000\n_cell_length_c   3.94513000\n_cell_angle_alpha   90.00000000\n_cell_angle_beta   90.00000000\n_cell_angle_gamma   90.00000000\n_symmetry_Int_Tables_number   1\n_chemical_formula_structural   SrTiO3\n_chemical_formula_sum   'Sr1 Ti1 O3'\n_cell_volume   61.40220340\n_cell_formula_units_Z   1\nloop_\n _symmetry_equiv_pos_site_id\n _symmetry_equiv_pos_as_xyz\n  1  'x, y, z'\nloop_\n _atom_site_type_symbol\n _atom_site_label\n _atom_site_symmetry_multiplicity\n _atom_site_fract_x\n _atom_site_fract_y\n _atom_site_fract_z\n _atom_site_occupancy\n  Sr  Sr0  1  0.00000000  0.00000000  0.00000000  1\n  Ti  Ti1  1  0.50000000  0.50000000  0.50000000  1\n  O  O2  1  0.50000000  0.00000000  0.50000000  1\n  O  O3  1  0.50000000  0.50000000  0.00000000  1\n  O  O4  1  0.00000000  0.50000000  0.50000000  1\n"
     s = Structure.from_str(cif, fmt='cif')
 
-    posits = [[0.50, 0.50, 0.50],
+    posits = [
+            [0.50, 0.50, 0.50],
             [0.50, 0.50, 0.51],
             [0.50, 0.50, 0.52],
             [0.50, 0.50, 0.53],
-            [0.50, 0.51, 0.51],
-            [0.51, 0.51, 0.51]]
+            [0.50, 0.507, 0.507],
+            [0.506, 0.506, 0.506]
+        ]
 
     all_dict = []
     for i, posit in enumerate(posits):
         one_dict = {}
-        one_dict['task_id'] = 'generate-' + str(i)
+        one_dict['task_id'] = 'pero_distort_' + str(i)
         s[1] = 'Ti', posit
         one_dict['cif'] = s.to(fmt='cif')
         all_dict.append(one_dict)
 
-    with open('pero_gene.json','w') as f:
+    with open('pero_distortion.json','w') as f:
         json.dump(all_dict, f, indent=1)
 
+
+def perovskite_different_lattice():
+    cif = "# generated using pymatgen\ndata_SrTiO3\n_symmetry_space_group_name_H-M   'P 1'\n_cell_length_a   3.94513000\n_cell_length_b   3.94513000\n_cell_length_c   3.94513000\n_cell_angle_alpha   90.00000000\n_cell_angle_beta   90.00000000\n_cell_angle_gamma   90.00000000\n_symmetry_Int_Tables_number   1\n_chemical_formula_structural   SrTiO3\n_chemical_formula_sum   'Sr1 Ti1 O3'\n_cell_volume   61.40220340\n_cell_formula_units_Z   1\nloop_\n _symmetry_equiv_pos_site_id\n _symmetry_equiv_pos_as_xyz\n  1  'x, y, z'\nloop_\n _atom_site_type_symbol\n _atom_site_label\n _atom_site_symmetry_multiplicity\n _atom_site_fract_x\n _atom_site_fract_y\n _atom_site_fract_z\n _atom_site_occupancy\n  Sr  Sr0  1  0.00000000  0.00000000  0.00000000  1\n  Ti  Ti1  1  0.50000000  0.50000000  0.50000000  1\n  O  O2  1  0.50000000  0.00000000  0.50000000  1\n  O  O3  1  0.50000000  0.50000000  0.00000000  1\n  O  O4  1  0.00000000  0.50000000  0.50000000  1\n"
+    s = Structure.from_str(cif, fmt='cif')
+
+    all_dict = []
+    for lat in np.linspace(3, 6, 61):
+        one_dict = {}
+        one_dict['task_id'] = 'pero_latt_' + str(round(lat,3))
+        new_latt = Lattice.from_parameters(lat, lat, lat, 90, 90, 90)
+        s.lattice = new_latt
+        one_dict['cif'] = s.to(fmt='cif')
+        all_dict.append(one_dict)
+
+    with open('pero_lattice.json','w') as f:
+        json.dump(all_dict, f, indent=1)
+
+
+def dist_matrix_1d(nbin=100):
+    '''
+    Generate distance matrix for earth mover's distance use
+    '''
+    dist_matrix = pd.DataFrame()
+    for x in range(nbin):
+        for y in range(nbin):
+            dist_matrix.loc[x, y] = abs(x-y)
+    return dist_matrix.values
+
+
+def nn_bulk_modulus(baseline_id, data, n_nn=3):
+    '''
+    Using the calucated EMD values and find the n nearest neighbor to estimate 
+    bulk modulus
+
+    Args:
+        baseline_id: the mp task_id need to be estimated
+        n_nn: number of nearest neighbors
+        data: mp json data from file
+    Return:
+        Estimation of the bulk modulus
+    '''
+    df_mp = pd.DataFrame.from_dict(data)
+    df_mp = df_mp.set_index('task_id')
+
+    df_emd = pd.read_csv('nn_' + baseline_id +'_' + baseline_id + '_emd.csv', index_col=0)
+    # the first row is the baseline_id, so remove it
+    nn_mps = df_emd.nsmallest(n_nn + 1, baseline_id)
+    nn_mps = nn_mps[1:]
+
+    aver_modul = 0
+    for task_id in nn_mps.index.values:
+        aver_modul += df_mp['elasticity.K_VRH'][task_id]
+
+    return aver_modul / n_nn
+
+
+def compare_nn_modulus():
+    import pandas as pd
+    df_mp = pd.DataFrame.from_dict(data)
+    df_mp = df_mp.set_index('task_id')
+
+    for i in [1000, 1100, 2000, 3000, 5000, 7000]:
+        g = df_mp['elasticity.K_VRH']['mp-'+str(i)]
+        p = []
+        for n_nn in range(1, 6):
+            p.append(nn_bulk_modulus('mp-'+str(i), data, n_nn=n_nn))
+        print(i, g, p)
 
 
 if __name__ == '__main__':

@@ -6,7 +6,11 @@ import json
 import heapq
 import numpy as np
 import pandas as pd
+from scipy.stats import wasserstein_distance
 from sklearn.model_selection import train_test_split
+from pyemd import emd_with_flow
+
+from miscellaneous import dist_matrix_1d
 
 
 def calc_obs_vs_pred(funct, X_data, y_data, test_size, outdir='../'):
@@ -176,6 +180,77 @@ def n_best_middle_worst(y_test, y_pred, metrics_values, n_visual=100,
 
     else:
         print('This method is not supported in n_best_and_worst')
+
+
+def rdf_similarity_visualize(data, all_rdf, mode, base_id=31):
+    '''
+    Visualization of rdf similarity results.
+    Currently only used to investigate the influence of lattice constant
+
+    Args:
+        data: data from json
+        all_rdf: 
+        base_id: ID number for the baseline structure, i.e. all others structures are compared 
+            to this structure
+    Return:
+        a pandas dataframe with all pairwise distance
+        for multiple shells rdf the distance is the mean value of all shells
+    '''
+
+    df = pd.DataFrame([])
+    if mode == 'similarity_different_shell':
+        vis_rdf_shells = [0, 2, 6, 12, 14, 20, 26, 28]
+        for i2, d2 in enumerate(data):
+            for j in vis_rdf_shells:
+                df.loc[d2['task_id'], str(j)] = wasserstein_distance(all_rdf[base_id][j], all_rdf[i2][j])
+    
+    elif mode == 'similarity_different_':
+        dist_list = []
+        mp_indice = []
+        vis_ids = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60]
+        for i2 in vis_ids:
+            mp_indice.append(data[i2]['task_id'])
+
+            rdf_len = np.array([len(all_rdf[base_id]), len(all_rdf[i2])]).min()
+            shell_distances = []
+            for j in range(rdf_len):
+                shell_distances.append(wasserstein_distance(all_rdf[base_id][j], all_rdf[i2][j]))
+            dist_list.append(shell_distances)
+
+        df = pd.DataFrame(dist_list, index=mp_indice).transpose()
+    
+    elif mode == 'rdf_shell':
+        rdf0s = []
+        local_extrems = [21, 25, 29, 31, 36, 40]
+        for i in local_extrems:
+            rdf0s.append(all_rdf[i][0])
+        df = pd.DataFrame(rdf0s, index=local_extrems).transpose()
+    
+    elif mode == 'rdf_shell_emd_path':
+        emd_flows = []
+        local_extrems = [21, 25, 29, 36, 40]
+        dist_matrix = dist_matrix_1d(len(all_rdf[0][0]))
+
+        for i in local_extrems:
+            em = emd_with_flow(all_rdf[base_id][0], all_rdf[i][0], dist_matrix)
+            print(em[0], wasserstein_distance(all_rdf[base_id][0], all_rdf[i][0]))
+            emd_flows.append(em[1])
+        df = pd.DataFrame(emd_flows, index=local_extrems)
+    
+    elif mode == 'lattice_difference':
+        nums = [0, 259, 544]
+        for base_id in nums:
+            a1 = Structure.from_str(data[base_id]['cif'], fmt='cif').lattice.a
+            for i2, d in enumerate(data):
+                a2 = Structure.from_str(data[i2]['cif'], fmt='cif').lattice.a
+                rdf_len = np.array([len(all_rdf[base_id]), len(all_rdf[i2])]).min()
+                shell_distances = []
+                for j in range(rdf_len):
+                    shell_distances.append(wasserstein_distance(all_rdf[base_id][j], all_rdf[i2][j]))
+                df.loc[data[i2]['task_id'], data[base_id]['task_id'] + 'lattice'] = a1 - a2
+                df.loc[data[i2]['task_id'], data[base_id]['task_id']] = np.array(shell_distances).mean()
+    
+    return df
 
 
 

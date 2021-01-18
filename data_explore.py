@@ -5,7 +5,9 @@ import json
 import time
 import gzip
 import argparse
+from tqdm import tqdm
 from scipy.stats import wasserstein_distance
+from pyemd import emd, emd_with_flow
 from pymatgen import Structure
 from pymatgen.analysis.local_env import CrystalNN
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer 
@@ -18,6 +20,8 @@ from extendRDF import rdf_histo, rdf_kde, get_rdf_and_atoms, shell_similarity
 from composition import elements_count, elements_selection, bonding_type
 from otherRDFs import origin_rdf_histo
 from rdf_io import rdf_read
+from visualization import rdf_similarity_visualize
+from miscellaneous import dist_matrix_1d
 
 
 def batch_rdf(data, max_dist=10, bin_size=0.1, method='bin', normalize=True, 
@@ -111,12 +115,20 @@ def rdf_trim(all_rdf, trim='minimum'):
     elif isinstance(trim, int):
         for i, rdf_len in enumerate(rdf_lens):
             if rdf_len < trim:
-                nbins = len(all_rdf[i][0])
-                all_rdf[i] = np.append( all_rdf[i], 
-                                        [[0.0] * nbins] * (trim-rdf_len), 
-                                        axis=0 )
+                a = int ( trim / rdf_len)
+                b = trim % rdf_len
+                if a != 1:
+                    all_rdf[i] = np.tile(all_rdf[i], a)
+                if b != 0:
+                    if len(all_rdf[0].shape) == 2:
+                        nbins = len(all_rdf[i][0])
+                        all_rdf[i] = np.append( all_rdf[i], [[0.0] * nbins] * b, axis=0 )
+                    elif len(all_rdf[0].shape) == 1:
+                        all_rdf[i] = np.append( all_rdf[i], [0.0] * b )
             else:
                 all_rdf[i] = all_rdf[i][:trim]
+
+#            print(len(all_rdf[i]))
     elif trim == 'none':
         pass 
     else:
@@ -183,6 +195,14 @@ def average_coordination(structure):
 
 def bond_stat_per_site(structure):
     '''
+    Get the bond length standard deviation of each site in the unit cell, the average
+    Get the coordination number of each site, then standard deviation
+
+    Args:
+        structure: pymatgen structure
+    Return:
+        Average of bond length std of each site
+        Standard deviation of coordination number
     '''
     nn = CrystalNN()
     coord_num = []
@@ -258,7 +278,7 @@ def rdf_value_stat(data, dir):
     return
 
 
-def rdf_similarity(data, all_rdf, order=None, debug=True):
+def rdf_similarity_matrix(data, all_rdf, order=None, method='emd'):
     '''
     Calculate the earth mover's distance between two RDFs
     Current support vanilla rdf and extend rdf
@@ -272,70 +292,54 @@ def rdf_similarity(data, all_rdf, order=None, debug=True):
             symmetry: in the order of space group number, typically for 
                 influence of distortion
             lattice: in the order of lattice constant
-        debug: if true, output some selected values 
-            this is used to investigate the lattice parameter effect
+        method: how similarity is calculated
+            emd: earth mover's distance
+            linear: inner product
+            linear-reciprocal: reciprocal of inner product (sum), useful for visualization
+                and comparison with emd results
     Return:
         a pandas dataframe with all pairwise distance
         for multiple shells rdf the distance is the mean value of all shells
     '''
     if len(all_rdf[0].shape) == 2:
         # typically for extend RDF
-        if debug:
-            i1 = 259 # use no 259 compound to compare to others
-            '''
-            df = pd.DataFrame([])
+        df = pd.DataFrame([])
+        dist_matrix = dist_matrix_1d(len(all_rdf[0][0]))
+        for i1, d1 in enumerate(tqdm(data, desc='rdf similarity', mininterval=60)):
             for i2, d2 in enumerate(data):
-                for j in [0, 2, 6, 12, 14, 20, 26, 28]:
-                    df.loc[d2['task_id'], str(j)] = wasserstein_distance(all_rdf[i1][j], all_rdf[i2][j])
-            
-            dist_list = []
-            mp_indice = []
-            for i2 in [205, 229, 239, 266, 294, 309]:
-                mp_indice.append(data[i2]['task_id'])
-                rdf_len = np.array([len(all_rdf[i1]), len(all_rdf[i2])]).min()
-                shell_distances = []
-                for j in range(rdf_len):
-                    shell_distances.append(wasserstein_distance(all_rdf[i1][j], all_rdf[i2][j]))
-                dist_list.append(shell_distances)
-            df = pd.DataFrame(dist_list, index=mp_indice).transpose()
-            
-            rdf0s = []
-            nums = [119, 135, 178, 227, 245, 259, 295, 325, 339, 347, 359]
-            for i in nums:
-                rdf0s.append(all_rdf[i][0])
-            df = pd.DataFrame(rdf0s, index=nums).transpose()
-            '''
-            nums = [0, 259, 544]
-            df = pd.DataFrame([])
-            for i1 in nums:
-                a1 = Structure.from_str(data[i1]['cif'], fmt='cif').lattice.a
-                for i2, d in enumerate(data):
-                    a2 = Structure.from_str(data[i2]['cif'], fmt='cif').lattice.a
+                if i1 <= i2:
                     rdf_len = np.array([len(all_rdf[i1]), len(all_rdf[i2])]).min()
                     shell_distances = []
                     for j in range(rdf_len):
-                        shell_distances.append(wasserstein_distance(all_rdf[i1][j], all_rdf[i2][j]))
-                    df.loc[data[i2]['task_id'], data[i1]['task_id'] + 'lattice'] = a1 - a2
-                    df.loc[data[i2]['task_id'], data[i1]['task_id']] = np.array(shell_distances).mean()            
+                        if method == 'emd':
+                            #shell_distances.append(wasserstein_distance(all_rdf[i1][j], all_rdf[i2][j]))
+                            shell_distances.append(emd(all_rdf[i1][j], all_rdf[i2][j], dist_matrix))
+                        elif method == 'linear' or method == 'linear-reciprocal':
+                            shell_distances.append(np.inner(all_rdf[i1][j], all_rdf[i2][j]))
 
-        else:
-            df = pd.DataFrame([])
-            for i1, d1 in enumerate(data):
-                for i2, d2 in enumerate(data):
-                    if i1 < i2:
-                        rdf_len = np.array([len(all_rdf[i1]), len(all_rdf[i2])]).min()
-                        shell_distances = []
-                        for j in range(rdf_len):
-                            shell_distances.append(wasserstein_distance(all_rdf[i1][j], all_rdf[i2][j]))
+                    if method == 'emd' or method == 'linear':
                         df.loc[d1['task_id'], d2['task_id']] = np.array(shell_distances).mean()
                         df.loc[d2['task_id'], d1['task_id']] = np.array(shell_distances).mean()
+                    elif method == 'linear-reciprocal':
+                        # add a small number 1e-11 to avoid dividing by zero
+                        df.loc[d1['task_id'], d2['task_id']] = 1.0 / (np.array(shell_distances).mean() + 1e-11)
+                        df.loc[d2['task_id'], d1['task_id']] = 1.0 / (np.array(shell_distances).mean() + 1e-11)    
+
     elif len(all_rdf[0].shape) == 1:
         # typically for vanilla RDF
         df = pd.DataFrame([])
-        for i1, d1 in enumerate(data):
+        dist_matrix = dist_matrix_1d(len(all_rdf[0]))
+        for i1, d1 in enumerate(tqdm(data, desc='rdf similarity', mininterval=60)):
             for i2, d2 in enumerate(data):
-                if i1 < i2:
-                    shell_distance = wasserstein_distance(all_rdf[i1], all_rdf[i2])
+                if i1 <= i2:
+                    if method == 'emd':
+                        #shell_distance = wasserstein_distance(all_rdf[i1], all_rdf[i2])
+                        shell_distance = emd(all_rdf[i1], all_rdf[i2], dist_matrix)
+                    elif method == 'linear':
+                        shell_distance = np.inner(all_rdf[i1], all_rdf[i2])
+                    elif method == 'linear-reciprocal':
+                        # add a small number 1e-11 to avoid dividing by zero
+                        shell_distance = 1.0 / (np.inner(all_rdf[i1], all_rdf[i2]) + 1e-11)
                     df.loc[d1['task_id'], d2['task_id']] = shell_distance
                     df.loc[d2['task_id'], d1['task_id']] = shell_distance    
     
@@ -367,6 +371,8 @@ if __name__ == '__main__':
                                     formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument('--input_file', type=str, default='../MP_modulus.json',
                         help='the bulk modulus and structure from Materials Project')
+    parser.add_argument('--output_file', type=str, default='rdf_similarity',
+                        help='currently for rdf similarity')
     parser.add_argument('--rdf_dir', type=str, default='./',
                         help='dir has all the rdf files')
     parser.add_argument('--task', type=str, default='num_shell',
@@ -379,19 +385,25 @@ if __name__ == '__main__':
                             '   bonding_type: \n' +
                             '   shell_similarity: \n' +
                             '   rdf_similarity: \n' +
+                            '   rdf_similarity_matrix: \n' +
+                            '   rdf_similarity_visualize: \n' +
                             '   subset: select a subset which have specified elements'
                       )
     parser.add_argument('--elem_list', type=str, default='O',
                         help='only used for subset task')
+    parser.add_argument('--baseline_id', type=str, default='mp-10',
+                        help='only used for rdf_similarity task, all other rdfs compared to this')
     parser.add_argument('--max_dist', type=float, default=10.0,
                         help='Cutoff distance of the RDF')
 
     args = parser.parse_args()
     infile = args.input_file
+    output_file = args.output_file
     rdf_dir = args.rdf_dir
     task = args.task
 
     elem_list = args.elem_list
+    baseline_id = args.baseline_id
     max_dist = args.max_dist
 
     with open(infile,'r') as f:
@@ -409,6 +421,7 @@ if __name__ == '__main__':
         origin_rdf_histo(data, max_dist=max_dist)
     elif task == 'composition':
         elements_count(data)
+
     elif task == 'shell_similarity':
         for i, d in enumerate(data):
             if ( i % 100 ) == 0:
@@ -418,12 +431,14 @@ if __name__ == '__main__':
                 np.savetxt('../shell_similarity/' + d['task_id'], 
                             shell_similarity(rdf[:30]), 
                             delimiter=' ', fmt='%.3f')
+
     elif task == 'bonding_type':
         for d in data:
             struct = Structure.from_str(d['cif'], fmt='cif')
             d['bond_elem_list'], d['bond_num_list'] = bonding_type(struct)
         with open(infile.replace('.json','_with_bond.json'), 'w') as f:
             json.dump(data, f, indent=1)
+
     elif task == 'bond_stat_per_site':
         for d in data:
             struct = Structure.from_str(d['cif'], fmt='cif')
@@ -431,6 +446,7 @@ if __name__ == '__main__':
             d['num_sg_operation'] = len(SpacegroupAnalyzer(struct).get_space_group_operations())
         with open(infile.replace('v7','v8'), 'w') as f:
             json.dump(data, f, indent=1)
+
     elif task == 'subset':
         print(elem_list)
         subset = elements_selection(data, elem_list=elem_list.split(), 
@@ -438,14 +454,46 @@ if __name__ == '__main__':
         # note that 'data' is also changed because it is defined in __main__
         with open('subset.json', 'w') as f:
             json.dump(subset, f, indent=1)
+
     elif task == 'rdf_similarity':
+        rdf_1 = np.loadtxt(rdf_dir + '/' + baseline_id, delimiter=' ')
+        df = pd.DataFrame([])
+        dist_matrix = dist_matrix_1d(len(rdf_1[0]))
+
+        with open (infile,'r') as f:
+            data = json.load(f)
+
+        for d in tqdm(data, desc='rdf similarity', mininterval=60):
+            rdf_2 = np.loadtxt(rdf_dir + '/' + d['task_id'], delimiter=' ')
+            rdf_len = np.array([len(rdf_1), len(rdf_2)]).min()
+            shell_distances = []
+            for j in range(rdf_len):
+                shell_distances.append(emd(rdf_1[j], rdf_2[j], dist_matrix))
+            df.loc[d['task_id'], baseline_id] = np.array(shell_distances).mean()
+
+        df.to_csv(output_file + '_' + baseline_id + '_emd.csv')
+
+    elif task == 'rdf_similarity_matrix':
         with open (infile,'r') as f:
             data = json.load(f)
 
         all_rdf = rdf_read(data, rdf_dir)
-        df = rdf_similarity(data, all_rdf)
-        df.to_csv('../rdf_similarity.csv')
-   
+        #all_rdf = rdf_trim(all_rdf, 100)
+        #all_rdf = rdf_flatten(all_rdf)
+        for similar_measure in ['emd']:
+            df = rdf_similarity_matrix(data, all_rdf, method=similar_measure, order=None)
+            df.to_csv(output_file + '_' + similar_measure + '_similar_matrix.csv')
+
+    elif task == 'rdf_similarity_visualize':
+        with open (infile,'r') as f:
+            data = json.load(f)
+
+        all_rdf = rdf_read(data, rdf_dir)
+
+        for mode in ['rdf_shell_emd_path']:
+            df = rdf_similarity_visualize(data, all_rdf, mode=mode)
+            df.to_csv(output_file + '_' + mode + '.csv')
+
     else:
         print('This task is not supported')
 
