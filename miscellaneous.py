@@ -1,4 +1,8 @@
 
+'''
+for rdf in smooth_rdf vanilla_rdf ; do cd $rdf ; for file in pero_distortion pero_lattice rp_srtio3 ; do python ../../../descriptors/data_explore.py --input_file  ../$file.json --task rdf_similarity  --output_file ../${file}_$rdf ; done ; cd .. ; done 
+'''
+
 import json
 import math
 import numpy as np
@@ -170,6 +174,46 @@ def dist_matrix_1d(nbin=100):
         for y in range(nbin):
             dist_matrix.loc[x, y] = abs(x-y)
     return dist_matrix.values
+
+
+def nn_bulk_modulus(baseline_id, data, n_nn=3):
+    '''
+    Using the calucated EMD values and find the n nearest neighbor to estimate 
+    bulk modulus
+
+    Args:
+        baseline_id: the mp task_id need to be estimated
+        n_nn: number of nearest neighbors
+        data: mp json data from file
+    Return:
+        Estimation of the bulk modulus
+    '''
+    df_mp = pd.DataFrame.from_dict(data)
+    df_mp = df_mp.set_index('task_id')
+
+    df_emd = pd.read_csv('nn_' + baseline_id +'_' + baseline_id + '_emd.csv', index_col=0)
+    # the first row is the baseline_id, so remove it
+    nn_mps = df_emd.nsmallest(n_nn + 1, baseline_id)
+    nn_mps = nn_mps[1:]
+
+    aver_modul = 0
+    for task_id in nn_mps.index.values:
+        aver_modul += df_mp['elasticity.K_VRH'][task_id]
+
+    return aver_modul / n_nn
+
+
+def compare_nn_modulus():
+    import pandas as pd
+    df_mp = pd.DataFrame.from_dict(data)
+    df_mp = df_mp.set_index('task_id')
+
+    for i in [1000, 1100, 2000, 3000, 5000, 7000]:
+        g = df_mp['elasticity.K_VRH']['mp-'+str(i)]
+        p = []
+        for n_nn in range(1, 6):
+            p.append(nn_bulk_modulus('mp-'+str(i), data, n_nn=n_nn))
+        print(i, g, p)
 
 
 if __name__ == '__main__':
