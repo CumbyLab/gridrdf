@@ -16,7 +16,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn import metrics
 from pyemd import emd
 
-from data_explore import rdf_trim, rdf_flatten, batch_shell_similarity
+from data_explore import rdf_trim, rdf_flatten, batch_shell_similarity, batch_lattice
 from composition import composition_one_hot, bonding_matrix
 from visualization import calc_obs_vs_pred, binarize_output, n_best_middle_worst
 from extendRDF import shell_similarity
@@ -213,6 +213,12 @@ if __name__ == '__main__':
                             '   append: append the similarity values after rdfs \n' +
                             '   only: only use similarity values as the X input'
                         )
+    parser.add_argument('--append_lattice', type=str, default='none',
+                        help='how to use the lattice parameters to append to the input feature: \n' +
+                            '   none: do not use lattice parameters  \n' +
+                            '   abc: append a, b, c, alpha, beta, gamma \n' +
+                            '   matrix: append a 3x3 matrix of lattice '
+                        )
 
     args = parser.parse_args()
     rdf_dir = args.rdf_dir
@@ -223,6 +229,7 @@ if __name__ == '__main__':
     output = args.output
     trim = int_or_str(args.trim)
     shell_similarity = args.shell_similarity
+    append_lattice = args.append_lattice
 
     # prepare the dataset 
     with open (y_file,'r') as f:
@@ -247,6 +254,19 @@ if __name__ == '__main__':
             X_data = shell_similarity_read(data, rdf_dir)
         else:
             print('Wrong shell similarity argument')
+
+        if append_lattice == 'none':
+            X_data = rdf_flatten(all_rdf)
+        elif append_lattice == 'abc':
+            all_rdf = rdf_flatten(all_rdf)
+            all_lattice = batch_lattice(data, method=append_lattice)
+            X_data = np.hstack((all_rdf, all_lattice))
+        elif append_lattice == 'matrix':
+            all_rdf = rdf_flatten(all_rdf)
+            all_lattice = batch_lattice(data, method=append_lattice)
+            X_data = np.hstack((all_rdf, all_lattice))
+        else:
+            print('Wrong append lattice argument')
 
     #np.savetxt('../X_data', X_data, delimiter=' ',fmt='%.3f')
     # target_type can be continuous categorical ordinal
