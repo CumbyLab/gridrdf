@@ -1,7 +1,8 @@
 '''
-This module is used for test runs, so the input is a single structure
-Batch calculation of the whole dataset, i.e. multiple input structures
-is done in data_explore.py
+The __name__ == '__main__' part in this module is used for test runs, 
+so the input_file should contain a single structure
+Batch calculation of the whole dataset, i.e. multiple input structures is done in the
+__name__ == '__main__' part in data_explore.py
 
 NB1: The 'prim_cell_list' variable is used with the 'extend_structure' function, 
     when the function is deprecated, this variable is kept maybe useful in the future
@@ -217,7 +218,7 @@ def rdf_stack_histo(rdf_atoms, structure, max_dist=10, bin_size=0.1, bond_direct
     return np.array(rdf_bin), atom_pair_list
 
 
-def rdf_kde(rdf_atoms, max_dist=10, bin_size=0.1):
+def rdf_kde(rdf_atoms, max_dist=10, bin_size=0.1, bandwidth=0.1):
     '''
     Convert the raw rdf with atoms to binned frequencies with Gaussian smearing
 
@@ -279,7 +280,7 @@ def shell_similarity(rdf_bin):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Calculate RDF with atoms',
                                     formatter_class=argparse.RawTextHelpFormatter)
-    parser.add_argument('--input', type=str, default=None,
+    parser.add_argument('--input_file', type=str, default=None,
                         help='Input CIF containing the crystal structure')
     parser.add_argument('--task', type=str, default='shell_similarity',
                         help='what to be calculated: \n' +
@@ -296,7 +297,7 @@ if __name__ == '__main__':
                         help='the number of shells for RDF, 0 means no trim')
 
     args = parser.parse_args()
-    infile = args.input
+    input_file = args.input_file
     task = args.task
     outfile = args.output
     max_dist = args.max_dist
@@ -304,9 +305,9 @@ if __name__ == '__main__':
 
     np.set_printoptions(threshold=sys.maxsize) # print the whole array
 
-    if infile:
+    if input_file:
         # read a structure from cif to a pymatgen structure
-        struct = Structure.from_file(filename=infile, primitive=True)
+        struct = Structure.from_file(filename=input_file, primitive=True)
     else:
         # if a input structure is not provide, the code is in test mode
         # and nacl structure will be used for test propose

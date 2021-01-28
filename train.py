@@ -207,68 +207,73 @@ if __name__ == '__main__':
                             '   none: no trim, suitable for origin RDF  \n' +
                             '   or an integer number'
                         )
-    parser.add_argument('--shell_similarity', type=str, default='none',
-                        help='how to use the similarity values between adjacent rdf shells: \n' +
-                            '   none: do not use shell similarity  \n' +
-                            '   append: append the similarity values after rdfs \n' +
-                            '   only: only use similarity values as the X input'
-                        )
-    parser.add_argument('--append_lattice', type=str, default='none',
-                        help='how to use the lattice parameters to append to the input feature: \n' +
-                            '   none: do not use lattice parameters  \n' +
-                            '   abc: append a, b, c, alpha, beta, gamma \n' +
-                            '   matrix: append a 3x3 matrix of lattice '
+    parser.add_argument('--input_features', type=str, default='extended_rdf',
+                        help='features used for machine learning: \n' +
+                            '   extended_rdf  \n' +
+                            '   shell_similarity: shell-wise similarity values \n' +
+                            '   fourier_space:  \n' +
+                            '   lattice_abc: a, b, c, alpha, beta, gamma \n' +
+                            '   lattice_matrix: a 3x3 matrix of lattice '
                         )
 
     args = parser.parse_args()
     rdf_dir = args.rdf_dir
-    y_file = args.input_file
+    input_file = args.input_file
     target = args.target
     metrics_method = args.metrics
     funct_name = args.funct
     output = args.output
     trim = int_or_str(args.trim)
-    shell_similarity = args.shell_similarity
-    append_lattice = args.append_lattice
+    input_features = args.input_features.split()
+    print(input_features)
 
     # prepare the dataset 
-    with open (y_file,'r') as f:
+    with open (input_file,'r') as f:
         data = json.load(f)
+
     if output != 'random_guess':
-        if 'tar' in rdf_dir:
-            all_rdf = rdf_read_tar(data, rdf_dir)
-        else:
-            all_rdf = rdf_read(data, rdf_dir)
+        all_features = ['extended_rdf', 'shell_similarity', 'fourier_space', 
+                        'lattice_abc', 'lattice_matrix']
+        if not set(input_features).issubset(all_features):
+            print('Wrong feature append argument')
+
+        X_data = None
+        if 'extended_rdf' in input_features:
+            if 'tar' in rdf_dir:
+                all_rdf = rdf_read_tar(data, rdf_dir)
+            else:
+                all_rdf = rdf_read(data, rdf_dir)
         
-        all_rdf = rdf_trim(all_rdf, trim=trim)
-
-        if shell_similarity == 'none':
+            # make all the rdf same length for machine learning input
+            all_rdf = rdf_trim(all_rdf, trim=trim)
             X_data = rdf_flatten(all_rdf)
-        elif shell_similarity == 'append':
-            #X_data = batch_shell_similarity(all_rdf, method='append')
-            all_rdf = rdf_flatten(all_rdf)
+        if 'shell_similarity' in input_features:
             all_shell_simi = shell_similarity_read(data, rdf_dir)
-            X_data = np.hstack((all_rdf, all_shell_simi))
-        elif shell_similarity == 'only':
-            #X_data = batch_shell_similarity(all_rdf, method='only')
-            X_data = shell_similarity_read(data, rdf_dir)
-        else:
-            print('Wrong shell similarity argument')
+            if X_data is None:
+                X_data = all_shell_simi
+            else: 
+                X_data = np.hstack((X_data, all_shell_simi))
+        if 'fourier_space' in input_features:
+            scatter_factors = rdf_read(data, '../fourier_space_0.1_normal/')
+            if X_data is None:
+                X_data = scatter_factors
+            else: 
+                X_data = np.hstack((X_data, scatter_factors))
+        if 'lattice_abc' in input_features:
+            all_lattice = batch_lattice(data, method='abc')
+            if X_data is None:
+                X_data = all_lattice
+            else:
+                X_data = np.hstack((X_data, all_lattice))
+        if 'lattice_matrix' in input_features:
+            all_lattice = batch_lattice(data, method='matrix')
+            if X_data is None:
+                X_data = all_lattice
+            else:
+                X_data = np.hstack((X_data, all_lattice))
+        
 
-        if append_lattice == 'none':
-            X_data = rdf_flatten(all_rdf)
-        elif append_lattice == 'abc':
-            all_rdf = rdf_flatten(all_rdf)
-            all_lattice = batch_lattice(data, method=append_lattice)
-            X_data = np.hstack((all_rdf, all_lattice))
-        elif append_lattice == 'matrix':
-            all_rdf = rdf_flatten(all_rdf)
-            all_lattice = batch_lattice(data, method=append_lattice)
-            X_data = np.hstack((all_rdf, all_lattice))
-        else:
-            print('Wrong append lattice argument')
-
-    #np.savetxt('../X_data', X_data, delimiter=' ',fmt='%.3f')
+    np.savetxt('../X_data', X_data, delimiter=' ',fmt='%.3f')
     # target_type can be continuous categorical ordinal
     # or multi-cont, multi-cate, multi-ord
     target_type = None

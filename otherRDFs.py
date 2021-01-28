@@ -8,7 +8,6 @@ from pymatgen import Structure
 try:
     from matminer.featurizers.structure import RadialDistributionFunction
     from matminer.featurizers.structure import PartialRadialDistributionFunction
-    from matminer.featurizers.utils.grdf import Histogram as PartialRDF
 except:
     print('matminer is not installed, cannot calculate original RDF')
 
@@ -50,12 +49,17 @@ def partial_rdf(data, max_dist=10, bin_size=0.1):
         The RDFs are saved into files
     '''
     prdf_fn = PartialRadialDistributionFunction(cutoff=max_dist, bin_size=bin_size)
+
+    structs = []
+    ids = []
     for d in data:
-        struct = Structure.from_str(d['cif'], fmt='cif')
-        prdf_fn.fit([struct])
+        structs.append(Structure.from_str(d['cif'], fmt='cif'))
+        ids.append(d['task_id'])
+    prdf_fn.fit(structs)
+
+    for i, struct in enumerate(structs):
         prdf_bin = prdf_fn.featurize(struct)
-        outfile = d['task_id']
-        np.savetxt(outfile, prdf_bin, delimiter=' ', fmt='%.3f')
+        np.savetxt(ids[i], prdf_bin, delimiter=' ', fmt='%.3f')
     return
 
 

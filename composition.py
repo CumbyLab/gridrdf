@@ -123,7 +123,7 @@ def elements_count(data):
     return
 
 
-def elements_selection(data, elem_list, mode='include', method='any'):
+def elements_selection(data, elem_list, mode='include'):
     '''
     Select a subset contains or not contain certain elements.
 
@@ -131,12 +131,11 @@ def elements_selection(data, elem_list, mode='include', method='any'):
         data: a list of dicts with CIFs
         elem_list: a list of the elements of interest or no-interest
         mode:
-            include: select the structures have elements in the elem_list
-            exclude: drop the structures have elements in the elem_list
-        method:
-            all: the structure has all the elements in the list
-            any: the structure has any one element in the list
+            include: select structures have elements in elem_list
+            exclude: drop structures have elements in elem_list
+            consist: select structures made up of elements in elem_list
     Return:
+        A new dataset after selection
     '''
     for d in data[:]:
         elements = Structure.from_str(d['cif'], fmt='cif').symbol_set
@@ -146,7 +145,9 @@ def elements_selection(data, elem_list, mode='include', method='any'):
         elif mode == 'exclude':
             if not set(elem_list).isdisjoint(elements):
                 data.remove(d)
-
+        elif mode == 'consist':
+            if not set(elements).issubset(elem_list):
+                data.remove(d)
     return data
 
 
