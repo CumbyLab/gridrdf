@@ -10,59 +10,151 @@ from pymatgen import Structure
 from pymatgen.analysis.local_env import CrystalNN
 
 
-def composition_one_hot(data, only_type=False, normalize=True, pettifor_index=True):
+def element_indice():
+    '''
+    type of element indice used 
+    '''
+    global modified_pettifor, pettifor, periodic_table, periodic_table_78
+
+    # 78 elements without nobal gas and rare earch Ac
+    # Put the elements with similar propeties together to give a better representation, see
+    # Pettifor, D. G. (1990). "Structure maps in alloy design." 
+    # Journal of the Chemical Society, Faraday Transactions 86(8): 1209.
+    pettifor = [
+        'Cs', 'Rb', 'K', 'Na', 'Li', 
+        'Ba', 'Sr', 'Ca', 
+        'Yb', 'Eu', 'Y',  'Sc', 'Lu', 'Tm', 'Er', 'Ho', 
+        'Dy', 'Tb', 'Gd', 'Sm', 'Pm', 'Nd', 'Pr', 'Ce', 'La', 
+        'Zr', 'Hf', 'Ti', 'Nb', 'Ta', 'V',  'Mo', 'W',  'Cr', 'Tc', 'Re', 
+        'Mn', 'Fe', 'Os', 'Ru', 'Co', 'Ir', 'Rh', 'Ni', 'Pt', 'Pd', 'Au', 'Ag', 'Cu', 
+        'Mg', 'Hg', 'Cd', 'Zn', 'Be', 'Tl', 'In', 'Al', 'Ga', 'Pb', 'Sn', 'Ge', 'Si', 'B',  
+        'Bi', 'Sb', 'As', 'P',  'Te', 'Se', 'S', 'C', 'I', 'Br', 'Cl', 'N', 'O', 'F', 'H'
+    ]
+
+    # 103 elements, A modified version of Pettifor, see
+    # Glawe, H., et al. (2016). New Journal of Physics 18(9): 093011.
+    # "The optimal one dimensional periodic table: a modified Pettifor chemical scale from data mining." 
+    modified_pettifor = [
+        'He', 'Ne', 'Ar', 'Kr', 'Xe', 'Rn', 
+        'Fr', 'Cs', 'Rb', 'K', 'Na', 'Li', 'Ra', 'Ba', 'Sr', 'Ca', 
+        'Eu', 'Yb', 'Lu', 'Tm', 'Y', 'Er', 'Ho', 'Dy', 'Tb', 'Gd', 'Sm', 'Pm', 'Nd', 'Pr', 'Ce', 'La', 
+        'Ac', 'Th', 'Pa', 'U', 'Np', 'Pu', 'Am', 'Cm', 'Bk', 'Cf', 'Es', 'Fm', 'Md', 'No', 'Lr', 
+        'Sc', 'Zr', 'Hf', 'Ti', 'Ta', 'Nb', 'V', 'Cr', 'Mo', 'W', 'Re', 
+        'Tc', 'Os', 'Ru', 'Ir', 'Rh', 'Pt', 'Pd', 'Au', 'Ag', 'Cu', 
+        'Ni', 'Co', 'Fe', 'Mn', 'Mg', 'Zn', 'Cd', 'Hg', 
+        'Be', 'Al', 'Ga', 'In', 'Tl', 'Pb', 'Sn', 'Ge', 'Si', 'B', 'C', 
+        'N', 'P', 'As', 'Sb', 'Bi', 'Po', 'Te', 'Se', 'S', 'O', 'At', 'I', 'Br', 'Cl', 'F', 'H'
+    ]
+
+    # 89 elements in the order of atomic Z number
+    # This is the periodic table which DFT pesudopotentials are avaiable
+    periodic_table = [
+        'H',  'He', 
+        'Li', 'Be', 'B',  'C',  'N',  'O',  'F',  'Ne', 
+        'Na', 'Mg', 'Al', 'Si', 'P',  'S',  'Cl', 'Ar', 
+        'K',  'Ca', 'Sc', 'Ti', 'V',  'Cr', 'Mn', 'Fe', 'Co', 'Ni', 'Cu', 'Zn', 'Ga', 'Ge', 'As', 'Se', 'Br', 'Kr', 
+        'Rb', 'Sr', 'Y',  'Zr', 'Nb', 'Mo', 'Tc', 'Ru', 'Rh', 'Pd', 'Ag', 'Cd', 'In', 'Sn', 'Sb', 'Te', 'I',  'Xe', 
+        'Cs', 'Ba', 
+                    'La', 'Ce', 'Pr', 'Nd', 'Pm', 'Sm', 'Eu', 'Gd', 'Tb', 'Dy', 'Ho', 'Er', 'Tm', 'Yb', 'Lu', 
+                          'Hf', 'Ta', 'W',  'Re', 'Os', 'Ir', 'Pt', 'Au', 'Hg', 'Tl', 'Pb', 'Bi', 
+    ]
+
+    # 78 elements version by removing nobal gas and six rare-earth Ac-row elements
+    periodic_table_78 = [
+        'H',  
+        'Li', 'Be', 'B',  'C',  'N',  'O',  'F',  
+        'Na', 'Mg', 'Al', 'Si', 'P',  'S',  'Cl',  
+        'K',  'Ca', 'Sc', 'Ti', 'V',  'Cr', 'Mn', 'Fe', 'Co', 'Ni', 'Cu', 'Zn', 'Ga', 'Ge', 'As', 'Se', 'Br', 
+        'Rb', 'Sr', 'Y',  'Zr', 'Nb', 'Mo', 'Tc', 'Ru', 'Rh', 'Pd', 'Ag', 'Cd', 'In', 'Sn', 'Sb', 'Te', 'I',  
+        'Cs', 'Ba', 
+                    'La', 'Ce', 'Pr', 'Nd', 'Pm', 'Sm', 'Eu', 'Gd', 'Tb', 'Dy', 'Ho', 'Er', 'Tm', 'Yb', 'Lu', 
+                          'Hf', 'Ta', 'W',  'Re', 'Os', 'Ir', 'Pt', 'Au', 'Hg', 'Tl', 'Pb', 'Bi', 
+    ]
+
+
+def composition_one_hot(data, method='percentage', index='z_number_78', only_elem_present=False):
     '''
     Make the composition to fix size vector like one hot array
+    Note that this function is ONLY suitable for formula with integer number
+    of each atom, i.e. a fomula with fractional occuption is not supported
+
     !!!REINDEX FOR ONLY_TYPE=FASLE NOT IMPLEMENT!!!
 
     Args:
-        data: the bulk modulus data and structure from Materials Project
-        only_type: if true, only the types are included but not  
-            the whole formula
-        normalize: if normalize, the number of atoms in the output will 
-            be given as percentage
-        pettifor_index: whether transform the element order from the peroidic table
-            number to Pettifor number
+        data: json dataset of structures from Materials Project
+        Method: how the number of atoms is encoded
+            percentage: (default) the number of atoms given as percentage, 
+                i.e. the sum of the whole formula is 1
+            formula: numbers in formula
+            only_type: the value of each atom is set to 1
+        index: see function element_indice for details
+            z_number_78: (default) in the order of atomic number, this is default 
+                because the similarity matrix is in this order
+            z_number: see periodic_table in function element_indice
+            pettifor: see function element_indice for details
+            modified_pettifor: see element_indice
+            elem_present: the vector only contain the elements presented in the dataset
+        only_element_present: Used when the vector is reindexed. If true, only keep the 
+            elements presented in the dataset
     Return:
-        1. one hot reprentation in atomic array
-        2. the order of the elements in the list
+        a pandas dataframe, index is mp-ids, and columns is element symbols
+        elem_symbol is a list of elements present in the dataset, in Z number order
     '''
-    pero_tab_nums = []
-    if only_type:
-        mlb = MultiLabelBinarizer()
-        for d in data:
-            struct = Structure.from_str(d['cif'], fmt='cif')
-            species = struct.types_of_specie
-            pero_tab_nums.append([ x.number for x in species ])
-        #
-        data_np = mlb.fit_transform(pero_tab_nums)
-        elem_numbers = mlb.classes_.tolist()
-        elem_symbols = [ Element.from_Z(x).name for x in elem_numbers ]
-        if pettifor_index:
-            Pettifor = ['Cs', 'Rb', 'K', 'Na', 'Li', 'Ba', 'Sr', 'Ca', 'Yb', 'Eu', 'Y',  'Sc', 'Lu', 'Tm', 'Er', 'Ho', 
-                'Dy', 'Tb', 'Gd', 'Sm', 'Pm', 'Nd', 'Pr', 'Ce', 'La', 'Zr', 'Hf', 'Ti', 'Nb', 'Ta', 'V',  'Mo', 
-                'W',  'Cr', 'Tc', 'Re', 'Mn', 'Fe', 'Os', 'Ru', 'Co', 'Ir', 'Rh', 'Ni', 'Pt', 'Pd', 'Au', 'Ag', 
-                'Cu', 'Mg', 'Hg', 'Cd', 'Zn', 'Be', 'Tl', 'In', 'Al', 'Ga', 'Pb', 'Sn', 'Ge', 'Si', 'B',  'Bi', 
-                'Sb', 'As', 'P',  'Te', 'Se', 'S', 'C', 'I', 'Br', 'Cl', 'N', 'O', 'F', 'H']
-            data_pd = pd.DataFrame(data_np, columns=elem_symbols)
-            data_pd = data_pd.reindex(columns=Pettifor)
-            data_np = data_pd.dropna().values
-        return data_np, elem_symbols
-    else:
-        for d in data:
-            struct = Structure.from_str(d['cif'], fmt='cif')
-            species = struct.species
-            pero_tab_nums.append([ x.number for x in species ])
-        # use the counter method to one-hot the element numbers
-        data_pd = pd.DataFrame([Counter(x) for x in pero_tab_nums])
-        data_np = data_pd.fillna(0).sort_index(axis=1).to_numpy()
-        if normalize:
-            data_np = data_np/data_np.sum(axis=1, keepdims=True)
+    # define the indice by call element_indice function
+    element_indice()
 
-        # get the order of elements in the list and element symbols
-        elem_numbers = data_pd.sort_index(axis=1).columns.tolist()
-        elem_symbols = [ Element.from_Z(x).name for x in elem_numbers ]
-        return np.ndarray.round(data_np, 3), elem_symbols
+    pero_tab_nums = []
+    mp_index = []
+    for d in data:
+        struct = Structure.from_str(d['cif'], fmt='cif')
+        # the struct.species method give a list of each site, 
+        # e.g. for SrTiO3 the output is 
+        # [Element Sr, Element Ti, Element O, Element O, Element O]
+        pero_tab_nums.append([ x.number for x in struct.species ])
+        mp_index.append(d['task_id'])
+    
+    # use the counter method to one-hot the element numbers
+    # considering the output of species method above
+    # the data_np is typically using " method == 'formula' "
+    elem_vectors = pd.DataFrame([Counter(x) for x in pero_tab_nums])
+    elem_vectors = elem_vectors.fillna(0).sort_index(axis=1)
+
+    if method == 'percentage':
+        # divide by total number of atoms to the sum will be 1
+        # sum all columns in each row, divide row-wise
+        elem_vectors = elem_vectors.div(elem_vectors.sum(axis=1), axis=0)
+    elif method == 'only_type':
+        # set all the non-zero values to 1
+        elem_vectors[elem_vectors != 0] = 1
+
+    # get the order of elements in the list and element symbols
+    elem_numbers = elem_vectors.columns.tolist()
+    # this gives all element symbols present in the dataset
+    elem_symbols = [ Element.from_Z(x).name for x in elem_numbers ]
+    
+    elem_vectors.columns = elem_symbols
+    elem_vectors.index = mp_index
+
+    # Now the vectors in data_np is in the order of Z number but only
+    # with the elements presented in the dataset
+    # we may want to reindex the data_np
+    # Note the index here is accutely column names in pandas, not pandas index
+    if index != 'elem_present': 
+        if index == 'z_number_78':
+            elem_vectors = elem_vectors.reindex(columns=periodic_table_78)
+        elif index == 'z_number':
+            elem_vectors = elem_vectors.reindex(columns=periodic_table)
+        elif index == 'pettifor':
+            elem_vectors = elem_vectors.reindex(columns=pettifor)
+        elif index == 'modified_pettifor':
+            elem_vectors = elem_vectors.reindex(columns=modified_pettifor)
+            
+        if only_elem_present:
+            elem_vectors = elem_vectors.dropna()
+        else:
+            elem_vectors = elem_vectors.fillna(0)
+
+    return elem_vectors, elem_symbols
 
 
 def elements_count(data):
@@ -76,17 +168,9 @@ def elements_count(data):
         write element histogram in elem_histo file
         write element-wise covariance matrix in elem_matrix file
     '''
-    # This is the periodic table which DFT pesudopotentials are avaiable
-    periodic_table = [
-        'H',  'He', 
-        'Li', 'Be', 'B',  'C',  'N',  'O',  'F',  'Ne', 
-        'Na', 'Mg', 'Al', 'Si', 'P',  'S',  'Cl', 'Ar', 
-        'K',  'Ca', 'Sc', 'Ti', 'V',  'Cr', 'Mn', 'Fe', 'Co', 'Ni', 'Cu', 'Zn', 'Ga', 'Ge', 'As', 'Se', 'Br', 'Kr', 
-        'Rb', 'Sr', 'Y',  'Zr', 'Nb', 'Mo', 'Tc', 'Ru', 'Rh', 'Pd', 'Ag', 'Cd', 'In', 'Sn', 'Sb', 'Te', 'I',  'Xe', 
-        'Cs', 'Ba', 
-                    'La', 'Ce', 'Pr', 'Nd', 'Pm', 'Sm', 'Eu', 'Gd', 'Tb', 'Dy', 'Ho', 'Er', 'Tm', 'Yb', 'Lu', 
-                          'Hf', 'Ta', 'W',  'Re', 'Os', 'Ir', 'Pt', 'Au', 'Hg', 'Tl', 'Pb', 'Bi', 
-                    'Ac', 'Th', 'Pa', 'U',  'Np', 'Pu']
+    # define the indice by call element_indice function
+    element_indice()
+
     # initialize two dicts
     elem_histo = {}
     elem_matrix = {}
@@ -169,9 +253,7 @@ def similarity_matrix(input_file='dist_matrix', normalize='inverse', order='pt_n
         order: the order of element in the matrix
             pt_number: the order in periodic table, i.e. atomic number
                     typically for calculation purpose
-            pettifor: typically for visualization purpose, following 
-                    Pettifor, D. G. (1990). "Structure maps in alloy design." 
-                    Journal of the Chemical Society, Faraday Transactions 86(8): 1209.
+            pettifor: typically for visualization purpose, 
      Return:
         a pandas dataframe of the similarity matrix
     ====================================================
@@ -201,6 +283,9 @@ def similarity_matrix(input_file='dist_matrix', normalize='inverse', order='pt_n
     sed -i 's/:/ /g' $outfile # make the valency a seperate column
     =========================================================
     '''
+    # define the indice by call element_indice function
+    element_indice()
+
     # note that the index_col is after the use of selection
     d = pd.read_csv(input_file, sep=' ', index_col=[0,1], usecols=[0,2,4])
     # make it a two dimensional matrix
@@ -209,18 +294,9 @@ def similarity_matrix(input_file='dist_matrix', normalize='inverse', order='pt_n
     d.columns = d.columns.droplevel()
 
     if order == 'pt_number':
-        index = ['H', 'Li', 'Be', 'B',  'C',  'N',  'O',  'F', 'Na', 'Mg', 'Al', 'Si', 'P',  'S',  'Cl', 
-                'K',  'Ca', 'Sc', 'Ti', 'V',  'Cr', 'Mn', 'Fe', 'Co', 'Ni', 'Cu', 'Zn', 'Ga', 'Ge', 'As', 'Se', 'Br', 
-                'Rb', 'Sr', 'Y',  'Zr', 'Nb', 'Mo', 'Tc', 'Ru', 'Rh', 'Pd', 'Ag', 'Cd', 'In', 'Sn', 'Sb', 'Te', 'I', 
-                'Cs', 'Ba', 'La', 'Ce', 'Pr', 'Nd', 'Pm', 'Sm', 'Eu', 'Gd', 'Tb', 'Dy', 'Ho', 'Er', 'Tm', 'Yb', 'Lu', 
-                'Hf', 'Ta', 'W',  'Re', 'Os', 'Ir', 'Pt', 'Au', 'Hg', 'Tl', 'Pb', 'Bi']
-    # Pettifor order of elements
+        index = periodic_table_78
     elif order == 'pettifor':
-        index = ['Cs', 'Rb', 'K', 'Na', 'Li', 'Ba', 'Sr', 'Ca', 'Yb', 'Eu', 'Y',  'Sc', 'Lu', 'Tm', 'Er', 'Ho', 
-                'Dy', 'Tb', 'Gd', 'Sm', 'Pm', 'Nd', 'Pr', 'Ce', 'La', 'Zr', 'Hf', 'Ti', 'Nb', 'Ta', 'V',  'Mo', 
-                'W',  'Cr', 'Tc', 'Re', 'Mn', 'Fe', 'Os', 'Ru', 'Co', 'Ir', 'Rh', 'Ni', 'Pt', 'Pd', 'Au', 'Ag', 
-                'Cu', 'Mg', 'Hg', 'Cd', 'Zn', 'Be', 'Tl', 'In', 'Al', 'Ga', 'Pb', 'Sn', 'Ge', 'Si', 'B',  'Bi', 
-                'Sb', 'As', 'P',  'Te', 'Se', 'S', 'C', 'I', 'Br', 'Cl', 'N', 'O', 'F', 'H']
+        index = pettifor
     # reindex, i.e. change the order of column and rows to Pettifor order  
     d = d.fillna(0)
     d = d.reindex(columns=index, index=index, fill_value=0) 
@@ -281,16 +357,13 @@ def bonding_matrix(data):
     Return:
         A 2D vector, first dimension is number of samples.
     '''
-    periodic_table = ['H', 'Li', 'Be', 'B',  'C',  'N',  'O',  'F', 'Na', 'Mg', 'Al', 'Si', 'P',  'S',  'Cl', 
-            'K',  'Ca', 'Sc', 'Ti', 'V',  'Cr', 'Mn', 'Fe', 'Co', 'Ni', 'Cu', 'Zn', 'Ga', 'Ge', 'As', 'Se', 'Br', 
-            'Rb', 'Sr', 'Y',  'Zr', 'Nb', 'Mo', 'Tc', 'Ru', 'Rh', 'Pd', 'Ag', 'Cd', 'In', 'Sn', 'Sb', 'Te', 'I', 
-            'Cs', 'Ba', 'La', 'Ce', 'Pr', 'Nd', 'Pm', 'Sm', 'Eu', 'Gd', 'Tb', 'Dy', 'Ho', 'Er', 'Tm', 'Yb', 'Lu', 
-            'Hf', 'Ta', 'W',  'Re', 'Os', 'Ir', 'Pt', 'Au', 'Hg', 'Tl', 'Pb', 'Bi']
-
+    # define the indice by call element_indice function
+    element_indice()
+    
     all_bond_matrix = []
-    num_elements = len(periodic_table)
+    num_elements = len(periodic_table_78)
     zeor_bond_matrix = pd.DataFrame(np.zeros((num_elements, num_elements)), 
-                                    index=periodic_table, columns=periodic_table)
+                                    index=periodic_table_78, columns=periodic_table_78)
     for d in data:
         bond_matrix = zeor_bond_matrix
         bond_list = d['bond_elem_list']
