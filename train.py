@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 from pymatgen import Structure
 from sklearn.kernel_ridge import KernelRidge
-from sklearn.linear_model import Lasso
+from sklearn.linear_model import Lasso, ElasticNet
 from sklearn.svm import SVR, SVC
 from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
 from sklearn.model_selection import train_test_split, learning_curve, GridSearchCV
@@ -20,7 +20,8 @@ from data_explore import rdf_trim, rdf_flatten, batch_shell_similarity, batch_la
 from composition import composition_one_hot, bonding_matrix
 from visualization import calc_obs_vs_pred, binarize_output, n_best_middle_worst
 from extendRDF import shell_similarity
-from rdf_io import rdf_read, shell_similarity_read
+from data_io import rdf_read, shell_similarity_read
+from misc import int_or_str
 
 
 def krr_grid_search(alpha, gamma, X_data, y_data, test_size=0.2):
@@ -66,16 +67,6 @@ def calc_learning_curve(funct, X_data, y_data, test_size=0.2):
     learning_curve_results = np.stack([ train_mean, train_std, test_mean, test_std ])
     learning_curve_results = learning_curve_results.transpose()
     np.savetxt('../learning_curve', learning_curve_results, delimiter=' ', fmt='%.3f')
-
-
-def int_or_str(value):
-    '''
-    For augment parser trim, where input can be either integer or string
-    '''
-    try:
-        return int(value)
-    except:
-        return value
 
 
 def emd_of_two_compositions(y_test, y_pred, pettifor_index=True):
@@ -138,28 +129,37 @@ def bond_to_atom(data, nelem=78):
     
 
 if __name__ == '__main__':
-    # input parameters
     parser = argparse.ArgumentParser(description='Train machine learning algorithm',
                                     formatter_class=argparse.RawTextHelpFormatter)
-
-    # input files of the training dataset
     parser.add_argument('--rdf_dir', type=str, default='./',
-                        help='All the rdf files for training \n' +
+                        help='The dir of all rdf files for training \n' +
                             '   default is current work dir'
                         )
-    parser.add_argument('--input_file', type=str, default='../MP_modulus.json',
+    parser.add_argument('--input_file', type=str, 
+                        default='../MP_modulus_datasets/MP_modulus.json',
                         help='files contain target data \n' +
                             '   default is ../MP_modulus.json'
                         )
-
+    parser.add_argument('--input_features', type=str, default='extended_rdf',
+                        help='features used for machine learning: \n' +
+                            '   extended_rdf  \n' +
+                            '   shell_similarity: shell-wise similarity values \n' +
+                            '   fourier_space:  \n' +
+                            '   lattice_abc: a, b, c, alpha, beta, gamma \n' +
+                            '   lattice_matrix: a 3x3 matrix of lattice \n' +
+                            '   formula:  \n' +
+                            '   composition:  \n' +
+                            ' '
+                        )
     parser.add_argument('--funct', type=str, default='krr',
                         help='which function is used, currently support: \n' +
                             '   krr(default, Kernel Ridge Regression) \n' +
                             '   svm(Support Vector Machine) \n' +
                             '   rf(random forest) \n' +
-                            '   lasso'
+                            '   lasso: linear model with L1 regulation \n' +
+                            '   elastic_net: both L1 and L2 regulation are used'
                         )
-    parser.add_argument('--target', type=str, default='composition',
+    parser.add_argument('--target', type=str, default='bulk_modulus',
                         help='which properteis as target, currently support: \n' +
                             '   bulk_modulus \n' +
                             '   shear_modulus \n' +
@@ -180,7 +180,7 @@ if __name__ == '__main__':
                             '   num_sg_operation:  \n' +
                             '   number_of_species: number of atomic species of the compound '
                         )
-    parser.add_argument('--output', type=str, default='test_size_depend',
+    parser.add_argument('--task', type=str, default='test_size_depend',
                         help='one of the following: \n'+
                             '   test_size_depend: default, change the test size from 0.1 to 0.9 \n' +
                             '   obs_vs_pred: plot the observation vs prediction results for \n' +
@@ -199,21 +199,11 @@ if __name__ == '__main__':
                             '   mape: mean absolute pencentage error \n' +
                             '   emd: earth mover distance, i.e. wasserstein metrics'
                         )
-
-    # parameters for rdf preprocessing
     parser.add_argument('--trim', type=str, default='minimum',
-                        help='the number of shells for RDF \n' +
+                        help='the number of shells for RDF used as input feature\n' +
                             '   minimum: default, use the minimum number of shells \n' +
                             '   none: no trim, suitable for origin RDF  \n' +
                             '   or an integer number'
-                        )
-    parser.add_argument('--input_features', type=str, default='extended_rdf',
-                        help='features used for machine learning: \n' +
-                            '   extended_rdf  \n' +
-                            '   shell_similarity: shell-wise similarity values \n' +
-                            '   fourier_space:  \n' +
-                            '   lattice_abc: a, b, c, alpha, beta, gamma \n' +
-                            '   lattice_matrix: a 3x3 matrix of lattice '
                         )
 
     args = parser.parse_args()
@@ -222,18 +212,25 @@ if __name__ == '__main__':
     target = args.target
     metrics_method = args.metrics
     funct_name = args.funct
-    output = args.output
+    task = args.task
     trim = int_or_str(args.trim)
     input_features = args.input_features.split()
-    print(input_features)
 
-    # prepare the dataset 
+    # read the dataset from input file
     with open (input_file,'r') as f:
         data = json.load(f)
 
-    if output != 'random_guess':
-        all_features = ['extended_rdf', 'shell_similarity', 'fourier_space', 
-                        'lattice_abc', 'lattice_matrix']
+    # the following input features are prepared
+    # if the task is to give randon guess (for comparsion with prediction)
+    # then no input features is needed
+    # otherwise the input features are calculated and comibined
+    if task != 'random_guess':
+        all_features = [
+            'extended_rdf', 'shell_similarity', 
+            'fourier_space', 
+            'lattice_abc', 'lattice_matrix',
+            'formula', 'composition'
+        ]
         if not set(input_features).issubset(all_features):
             print('Wrong feature append argument')
 
@@ -272,8 +269,9 @@ if __name__ == '__main__':
             else:
                 X_data = np.hstack((X_data, all_lattice))
         
+    # the following line save X_data for check, but this is rarely used
+    # np.savetxt('../X_data', X_data, delimiter=' ',fmt='%.3f')
 
-    np.savetxt('../X_data', X_data, delimiter=' ',fmt='%.3f')
     # target_type can be continuous categorical ordinal
     # or multi-cont, multi-cate, multi-ord
     target_type = None
@@ -291,7 +289,6 @@ if __name__ == '__main__':
         target_type = 'continuous'
         y_data = np.array([ Structure.from_str(x['cif'], fmt='cif').density 
                             for x in data ])
-        #np.savetxt('../density', y_data, delimiter=' ', fmt='%.3f')
     elif target == 'volume_per_atom':
         target_type = 'continuous'
         y_data = np.array([ Structure.from_str(x['cif'], fmt='cif').volume 
@@ -318,11 +315,10 @@ if __name__ == '__main__':
                             for x in data ])
     elif target == 'composition':
         target_type = 'multi-cont'
-        y_data, elem_symbols = composition_one_hot(data=data, only_type=False)
-        print(elem_symbols)
+        y_data, elem_symbols = composition_one_hot(data=data, method='percentage', index='pettifor')
     elif target == 'type_of_elements':
         target_type = 'multi-cate'
-        y_data, elem_symbols = composition_one_hot(data=data, only_type=True)
+        y_data, elem_symbols = composition_one_hot(data=data, method='only_type', index='pettifor')
     elif target == 'bonding_type':
         target_type = 'multi-cate'
         y_data = bonding_matrix(data=data)
@@ -359,6 +355,8 @@ if __name__ == '__main__':
             funct = SVR(kernel='linear')
     elif funct_name == 'lasso':
         funct = Lasso()
+    elif funct_name == 'elastic_net':
+        funct = ElasticNet(alpha=1.0, l1_ratio=0.7)
     elif funct_name == 'rf':
         if target_type in ('categorical', 'multi-cate'):
             funct = RandomForestClassifier(max_depth=2, random_state=0)
@@ -370,7 +368,7 @@ if __name__ == '__main__':
 
     # use a 80/20 split except otherwise stated, e.g. in varying test_size
     test_size = 0.2
-    if output == 'test_size_depend':
+    if task == 'test_size_depend':
         for test_size in np.linspace(0.9, 0.1, 9):
             X_train, X_test, y_train, y_test = \
                 train_test_split(X_data, y_data, test_size=test_size, random_state=1) 
@@ -433,11 +431,11 @@ if __name__ == '__main__':
             print('Training size {} ; Training samples {} ; Metrics {}'.format(
                     round(1-test_size, 3), int((1-test_size)*len(y_data)), pred_acc))
     
-    elif output == 'obs_vs_pred':
+    elif task == 'obs_vs_pred':
         calc_obs_vs_pred(funct=funct, X_data=X_data, y_data=y_data, test_size=test_size,
                         outdir='../'+target+'_')
     
-    elif output == 'confusion_matrix':
+    elif task == 'confusion_matrix':
         if target_type == 'multi-cate':
             X_train, X_test, y_train, y_test = \
                     train_test_split(X_data, y_data, test_size=test_size, random_state=1)
@@ -466,7 +464,7 @@ if __name__ == '__main__':
         else:
             print('This target does not support confusion matrix')
     
-    elif output == 'grid_search':
+    elif task == 'grid_search':
         if funct_name == 'krr':
             best_score, best_params, cv_results = \
                     krr_grid_search(alpha=np.logspace(-2, 2, 5), gamma=np.logspace(-2, 2, 5),
@@ -478,10 +476,10 @@ if __name__ == '__main__':
                                     X_data=X_data, y_data=y_data, test_size=test_size)
             print('best score {} ; best parameter {}'.format(best_score, best_params))
     
-    elif output == 'learning_curve':
+    elif task == 'learning_curve':
         calc_learning_curve(funct=funct, X_data=X_data, y_data=y_data, test_size=test_size)
 
-    elif output == 'random_guess':
+    elif task == 'random_guess':
         if target == 'number_of_species':
             nclass = 5
             max_class = 3
@@ -504,7 +502,7 @@ if __name__ == '__main__':
 
             print(emd_of_two_compositions(y_data, y_pred_rand, pettifor_index=True).mean())
 
-    elif output == 'emd_visual':
+    elif task == 'emd_visual':
         X_train, X_test, y_train, y_test = \
                 train_test_split(X_data, y_data, test_size=test_size, random_state=1)
         funct.fit(X_train, y_train)
@@ -526,6 +524,6 @@ if __name__ == '__main__':
                         delimiter=' ', fmt='%.3f')
 
     else:
-        print('This output is not supported')
+        print('This task is not supported')
 
 
