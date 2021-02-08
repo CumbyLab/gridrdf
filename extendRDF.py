@@ -10,7 +10,6 @@ NB1: The 'prim_cell_list' variable is used with the 'extend_structure' function,
 
 import sys
 import numpy as np
-import pprint
 import argparse
 import logging
 import itertools 
@@ -238,7 +237,7 @@ def rdf_kde(rdf_atoms, max_dist=10, bin_size=0.1, bandwidth=0.1):
     # e.g. rdf_nn_shell[0] contain all the pair distance of the first NN
     rdf_nn_shells = []
     for x in range(rdf_len):
-         rdf_nn_shells.append( [line[x][0] 
+         rdf_nn_shells.append( [line[x]
                             for line in rdf_atoms.values() 
                             if len(line) > x] )
 
@@ -246,7 +245,7 @@ def rdf_kde(rdf_atoms, max_dist=10, bin_size=0.1, bandwidth=0.1):
     bins = np.linspace(start=0, stop=max_dist, num=int(max_dist/bin_size)+1)[:, np.newaxis]
 
     rdf_bin = []
-    kde = KernelDensity(kernel='gaussian', bandwidth=bin_size)
+    kde = KernelDensity(kernel='gaussian', bandwidth=bandwidth)
     for x in rdf_nn_shells:
         log_dens = kde.fit(np.array(x)[:, np.newaxis]).score_samples(bins)
         rdf_bin.append(np.exp(log_dens))

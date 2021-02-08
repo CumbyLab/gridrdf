@@ -10,8 +10,6 @@ from scipy.stats import wasserstein_distance
 from sklearn.model_selection import train_test_split
 from pyemd import emd_with_flow
 
-from miscellaneous import dist_matrix_1d
-
 
 def calc_obs_vs_pred(funct, X_data, y_data, test_size, outdir='../'):
     '''

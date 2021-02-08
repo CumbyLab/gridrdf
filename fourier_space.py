@@ -297,8 +297,8 @@ class XRDCalculator(AbstractDiffractionPatternCalculator):
                     g_dot_r = np.dot(fcoords, np.transpose([hkl])).T[0]
 
                     # Highly vectorized computation of atomic scattering factors.
-                    fs = zs - 41.78214 * s2 * np.sum(
-                        coeffs[:, :, 0] * np.exp(-coeffs[:, :, 1] * s2), axis=1)
+                    fs = zs #- 41.78214 * s2 * np.sum(
+                        #coeffs[:, :, 0] * np.exp(-coeffs[:, :, 1] * s2), axis=1)
 
                     dw_correction = np.exp(-dwfactors * s2)
 
@@ -327,12 +327,12 @@ if __name__ == '__main__':
                         help='dir has all the input files')
 
     args = parser.parse_args()
-    infile = args.input_file
+    input_file = args.input_file
     #output_file = args.output_file
     feature_dir = args.feature_dir
     #task = args.task
 
-    with open(infile,'r') as f:
+    with open(input_file,'r') as f:
         data = json.load(f)
 
     x = XRDCalculator()
@@ -341,9 +341,9 @@ if __name__ == '__main__':
         struct = Structure.from_str(d['cif'], fmt='cif')
         try:
             Fs, _, two_theta = x.get_pattern(struct)
-            np.savetxt(d['task_id'] + '_Fs', Fs, delimiter=' ', fmt='%.3f')
+            np.savetxt(d['task_id'], Fs, delimiter=' ', fmt='%.3f')
             #np.savetxt(d['task_id'] + '_hkl', hkl, delimiter=' ', fmt='%.3f')
-            np.savetxt(d['task_id'] + '_two_theta', two_theta, delimiter=' ', fmt='%.3f')
+            #np.savetxt(d['task_id'] + '_two_theta', two_theta, delimiter=' ', fmt='%.3f')
         except:
             print(d['task_id'], flush=True)
 
