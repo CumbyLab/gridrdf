@@ -19,9 +19,7 @@ except:
 from extendRDF import rdf_histo, rdf_kde, get_rdf_and_atoms, shell_similarity
 from composition import elements_count, elements_selection, bonding_type
 from otherRDFs import origin_rdf_histo
-from rdf_io import rdf_read
-from visualization import rdf_similarity_visualize
-from earth_mover_distance import dist_matrix_1d, rdf_similarity_matrix
+from data_io import rdf_read
 
 
 def batch_rdf(data, max_dist=10, bin_size=0.1, method='bin', normalize=True, 
@@ -319,7 +317,8 @@ if __name__ == '__main__':
                             '   composition: element-wise statistics of all compositions \n' +
                             '   bonding_type: \n' +
                             '   shell_similarity: \n' +
-                            '   subset: select a subset which have specified elements'
+                            '   subset_composition: select a subset which have specified elements: \n' +
+                            '   subset_space_group: '
                       )
     parser.add_argument('--elem_list', type=str, default='O',
                         help='only used for subset task')
@@ -333,7 +332,6 @@ if __name__ == '__main__':
     task = args.task
 
     elem_list = args.elem_list
-    baseline_id = args.baseline_id
     max_dist = args.max_dist
 
     with open(input_file,'r') as f:
@@ -377,12 +375,26 @@ if __name__ == '__main__':
         with open(input_file.replace('v7','v8'), 'w') as f:
             json.dump(data, f, indent=1)
 
-    elif task == 'subset':
+    elif task == 'subset_composition':
         print(elem_list)
         subset = elements_selection(data, elem_list=elem_list.split(), mode='consist')
         # note that 'data' is also changed because it is defined in __main__
         with open('subset.json', 'w') as f:
             json.dump(subset, f, indent=1)
+
+    elif task == 'subset_space_group':
+        sg_grouped_structs = {}
+        for sg_num in range(230, 0, -1):
+            sg_grouped_structs[sg_num] = []
+    
+        for d in data:
+            struct = Structure.from_str(d['cif'], fmt='cif')
+            sg_num = struct.get_space_group_info()[1]
+            sg_grouped_structs[sg_num].append(d)
+
+        for sg_num in range(230, 0, -1):
+            with open('../subset/subset_' + str(sg_num) + '.json', 'w') as f:
+                json.dump(sg_grouped_structs[sg_num], f, indent=1)
 
     else:
         print('This task is not supported')
