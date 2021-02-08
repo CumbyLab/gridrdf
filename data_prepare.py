@@ -8,7 +8,64 @@ import math
 import numpy as np
 import pandas as pd
 from collections import Counter
-from pymatgen import Structure, Lattice
+from pymatgen import Structure, Lattice, MPRester
+
+
+def nacl():
+    '''
+    Generate NaCl structure
+
+    Args:
+        None
+    Return:
+        a pymatgen structure of NaCl
+    '''
+    nacl = Structure.from_spacegroup(
+        'Fm-3m', Lattice.cubic(5.6),['Na', 'Cl'],[[0.5, 0.5, 0.5], [0, 0, 0]] )
+    return nacl
+
+
+def get_MP_bulk_modulus_data(APIkey): 
+    '''
+    Get all Material project structures with calculated elastic properties
+
+    Args:
+        APIkey: a string 'Hecxxxxxxxxxxx' needed to be applied from MP website
+    Return:
+        A json object containing
+            MP task id
+            Bulk modulus
+            Shear modulus
+            Elastic anisotropy
+            CIF of structure
+    '''
+    # put personal API key here
+    q = MPRester(APIKey)   
+    d = q.query(criteria={'elasticity.K_VRH':{'$nin': [None, '']}}, 
+                properties=['task_id', 
+                            'elasticity.K_VRH', 
+                            'elasticity.G_VRH', 
+                            'elasticity.elastic_anisotropy', 
+                            'cif'])
+    return d
+
+
+def get_ICSD_CIFs_from_MP(APIkey): 
+    '''
+    Get all ICSD structures in the Material project 
+
+    Args:
+        APIkey: a string 'Hecxxxxxxxxxxx' needed to be applied from MP website
+    Return:
+        A json object containing
+            MP task id
+            ICSD id
+            CIF of structure
+    '''
+    q = MPRester(APIKey)   
+    d = q.query(criteria={'icsd_ids':{'$nin': [None, []]}}, 
+                properties=['task_id', 'icsd_ids', 'cif'])
+    return d
 
 
 def remove_nan():
@@ -88,32 +145,50 @@ def normalize_fourier_space():
         np.savetxt('../fourier_space_0.1_normal/'+f, fs * scale_factor, delimiter=' ', fmt='%.3f')
 
 
-def read_all_fs():
+def make_distorted_perovskite():
     '''
+    used for testing purpose for EMD + extended RDF as a similarity measure
+
     '''
-    import os
-    import numpy as np
-    import pandas as pd
+    cif = "# generated using pymatgen\ndata_SrTiO3\n_symmetry_space_group_name_H-M   'P 1'\n_cell_length_a   3.94513000\n_cell_length_b   3.94513000\n_cell_length_c   3.94513000\n_cell_angle_alpha   90.00000000\n_cell_angle_beta   90.00000000\n_cell_angle_gamma   90.00000000\n_symmetry_Int_Tables_number   1\n_chemical_formula_structural   SrTiO3\n_chemical_formula_sum   'Sr1 Ti1 O3'\n_cell_volume   61.40220340\n_cell_formula_units_Z   1\nloop_\n _symmetry_equiv_pos_site_id\n _symmetry_equiv_pos_as_xyz\n  1  'x, y, z'\nloop_\n _atom_site_type_symbol\n _atom_site_label\n _atom_site_symmetry_multiplicity\n _atom_site_fract_x\n _atom_site_fract_y\n _atom_site_fract_z\n _atom_site_occupancy\n  Sr  Sr0  1  0.00000000  0.00000000  0.00000000  1\n  Ti  Ti1  1  0.50000000  0.50000000  0.50000000  1\n  O  O2  1  0.50000000  0.00000000  0.50000000  1\n  O  O3  1  0.50000000  0.50000000  0.00000000  1\n  O  O4  1  0.00000000  0.50000000  0.50000000  1\n"
+    s = Structure.from_str(cif, fmt='cif')
 
-    fs = []
-    for f in os.listdir('.'):
-        fs.append(np.loadtxt(f, delimiter=' '))
+    posits = [
+            [0.50, 0.50, 0.50],
+            [0.50, 0.50, 0.51],
+            [0.50, 0.50, 0.52],
+            [0.50, 0.50, 0.53],
+            [0.50, 0.507, 0.507],
+            [0.506, 0.506, 0.506]
+        ]
 
-    df = pd.DataFrame(fs).transpose()
+    all_dict = []
+    for i, posit in enumerate(posits):
+        one_dict = {}
+        one_dict['task_id'] = 'pero_distort_' + str(i)
+        s[1] = 'Ti', posit
+        one_dict['cif'] = s.to(fmt='cif')
+        all_dict.append(one_dict)
 
+    with open('pero_distortion.json','w') as f:
+        json.dump(all_dict, f, indent=1)
+
+
+def perovskite_different_lattice():
+    cif = "# generated using pymatgen\ndata_SrTiO3\n_symmetry_space_group_name_H-M   'P 1'\n_cell_length_a   3.94513000\n_cell_length_b   3.94513000\n_cell_length_c   3.94513000\n_cell_angle_alpha   90.00000000\n_cell_angle_beta   90.00000000\n_cell_angle_gamma   90.00000000\n_symmetry_Int_Tables_number   1\n_chemical_formula_structural   SrTiO3\n_chemical_formula_sum   'Sr1 Ti1 O3'\n_cell_volume   61.40220340\n_cell_formula_units_Z   1\nloop_\n _symmetry_equiv_pos_site_id\n _symmetry_equiv_pos_as_xyz\n  1  'x, y, z'\nloop_\n _atom_site_type_symbol\n _atom_site_label\n _atom_site_symmetry_multiplicity\n _atom_site_fract_x\n _atom_site_fract_y\n _atom_site_fract_z\n _atom_site_occupancy\n  Sr  Sr0  1  0.00000000  0.00000000  0.00000000  1\n  Ti  Ti1  1  0.50000000  0.50000000  0.50000000  1\n  O  O2  1  0.50000000  0.00000000  0.50000000  1\n  O  O3  1  0.50000000  0.50000000  0.00000000  1\n  O  O4  1  0.00000000  0.50000000  0.50000000  1\n"
+    s = Structure.from_str(cif, fmt='cif')
+
+    all_dict = []
+    for lat in np.linspace(3, 6, 61):
+        one_dict = {}
+        one_dict['task_id'] = 'pero_latt_' + str(round(lat,3))
+        new_latt = Lattice.from_parameters(lat, lat, lat, 90, 90, 90)
+        s.lattice = new_latt
+        one_dict['cif'] = s.to(fmt='cif')
+        all_dict.append(one_dict)
+
+    with open('pero_lattice.json','w') as f:
+        json.dump(all_dict, f, indent=1)
 
 if __name__ == '__main__':
-    modified_petiffor = ['He', 'Ne', 'Ar', 'Kr', 'Xe', 'Rn', 
-                    'Fr', 'Cs', 'Rb', 'K', 'Na', 'Li', 'Ra', 'Ba', 'Sr', 'Ca', 
-                    'Eu', 'Yb', 'Lu', 'Tm', 'Y', 'Er', 'Ho', 'Dy', 'Tb', 'Gd', 'Sm', 'Pm', 'Nd', 'Pr', 'Ce', 'La', 
-                    'Ac', 'Th', 'Pa', 'U', 'Np', 'Pu', 'Am', 'Cm', 'Bk', 'Cf', 'Es', 'Fm', 'Md', 'No', 'Lr', 
-                    'Sc', 'Zr', 'Hf', 'Ti', 'Ta', 'Nb', 'V', 'Cr', 'Mo', 'W', 'Re', 
-                    'Tc', 'Os', 'Ru', 'Ir', 'Rh', 'Pt', 'Pd', 'Au', 'Ag', 'Cu', 
-                    'Ni', 'Co', 'Fe', 'Mn', 'Mg', 'Zn', 'Cd', 'Hg', 
-                    'Be', 'Al', 'Ga', 'In', 'Tl', 'Pb', 'Sn', 'Ge', 'Si', 'B', 'C', 
-                    'N', 'P', 'As', 'Sb', 'Bi', 'Po', 'Te', 'Se', 'S', 'O', 'At', 'I', 'Br', 'Cl', 'F', 'H']
-    petiffor = ['Cs', 'Rb', 'K', 'Na', 'Li', 'Ba', 'Sr', 'Ca', 'Yb', 'Eu', 'Y',  'Sc', 'Lu', 'Tm', 'Er', 'Ho', 
-                'Dy', 'Tb', 'Gd', 'Sm', 'Pm', 'Nd', 'Pr', 'Ce', 'La', 'Zr', 'Hf', 'Ti', 'Nb', 'Ta', 'V',  'Mo', 
-                'W',  'Cr', 'Tc', 'Re', 'Mn', 'Fe', 'Os', 'Ru', 'Co', 'Ir', 'Rh', 'Ni', 'Pt', 'Pd', 'Au', 'Ag', 
-                'Cu', 'Mg', 'Hg', 'Cd', 'Zn', 'Be', 'Tl', 'In', 'Al', 'Ga', 'Pb', 'Sn', 'Ge', 'Si', 'B',  'Bi', 
-                'Sb', 'As', 'P',  'Te', 'Se', 'S', 'C', 'I', 'Br', 'Cl', 'N', 'O', 'F', 'H']
+    pass
