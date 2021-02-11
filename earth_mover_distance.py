@@ -10,6 +10,19 @@ from tqdm import tqdm
 from pymatgen import Structure, Lattice
 from pymatgen.analysis.structure_matcher import StructureMatcher
 from scipy import spatial
+
+# the wasserstein distance in scipy treats frequencies of each bin as a value, 
+# and then builds the distributions from those values and computes the distance. 
+# You can either simply pass the values that you create histograms from 
+# or pass mid points of bins as values and frequencies as weights
+# here the later method is used
+from scipy.stats import wasserstein_distance
+
+# generally the wasserstein distance in scipy is much faster than EMD package
+# these two have been checked, they give same results
+# so this emd is used only when
+#   1. the flow between two distribution is needed
+#   2. a distance matrix need to be defined, like composition similarity
 from pyemd import emd, emd_with_flow
 
 try:
@@ -20,6 +33,7 @@ except:
 from data_io import rdf_read
 from data_explore import rdf_trim, rdf_flatten
 from composition import composition_one_hot, element_indice
+from misc import int_or_str
 
 
 def emd_formula_example():
@@ -286,13 +300,56 @@ def composition_similarity_matrix(data, index='z_number_78'):
     for i1, mp_id_1 in enumerate(tqdm(data.index, mininterval=60)):
         for i2, mp_id_2 in enumerate(data.index):
             if i1 <= i2:
-                shell_distance = emd(data.loc[mp_id_1].values.copy(order='C'), 
-                                    data.loc[mp_id_2].values.copy(order='C'), 
-                                    dist_matrix)
+                emd_value = emd(data.loc[mp_id_1].values.copy(order='C'), 
+                                data.loc[mp_id_2].values.copy(order='C'), 
+                                dist_matrix)
+                compo_emd.loc[mp_id_1, mp_id_2] = emd_value
+                compo_emd.loc[mp_id_2, mp_id_1] = emd_value
+    return compo_emd
 
-                compo_emd.loc[mp_id_1, mp_id_2] = shell_distance
-                compo_emd.loc[mp_id_2, mp_id_1] = shell_distance 
 
+def composition_similarity_matrix_large_dataset(data, indice=[0,1], index='z_number_78'):
+    '''
+    Calcalate pairwise earth mover's distance of all compositions, the composition should be 
+    a 78-element vector, as the elemental similarity_matrix is 78x78 matrix in the order of  
+    atom numbers
+
+    Args:
+        data: pandas dataframe of element vectors for all the structures
+        index: see function element_indice for details
+            z_number_78: (default) in the order of atomic number, this is default 
+                because the similarity matrix is in this order
+            z_number: see periodic_table in function element_indice
+            pettifor: see function element_indice for details
+            modified_pettifor: see element_indice
+            elem_present: the vector only contain the elements presented in the dataset
+    Return:
+        a pandas dataframe of pairwise EMD with mp-ids as index
+    '''
+    # define the indice by call element_indice function
+    element_indice()
+    
+    dist = []
+    elem_similarity_file = os.path.join(sys.path[0], 'similarity_matrix.csv')
+    dist_matrix = pd.read_csv(elem_similarity_file, index_col='ionA')
+    dist_matrix = 1 / (np.log10(1 / dist_matrix + 1))
+
+    if index == 'pettifor':
+        dist_matrix = dist_matrix.reindex(columns=pettifor, index=pettifor) 
+    # the earth mover's distance package need order C and float64 astype('float64')
+    dist_matrix = dist_matrix.values.copy(order='C')
+
+    compo_emd = pd.DataFrame([])
+    for i1 in range(indice[0], indice[1]):
+        mp_id_1 = data.index[i1]
+        for i2, mp_id_2 in enumerate(data.index):
+            if i1 <= i2:
+                emd_value = emd(data.loc[mp_id_1].values.copy(order='C'), 
+                                data.loc[mp_id_2].values.copy(order='C'), 
+                                dist_matrix)
+                compo_emd.loc[mp_id_1, mp_id_2] = emd_value
+            else:
+                compo_emd.loc[mp_id_1, mp_id_2] = np.nan
     return compo_emd
 
 
@@ -309,6 +366,9 @@ def rdf_similarity(baseline_rdf, all_rdf):
         a pandas dataframe of pairwise distance between baseline id and all others
         for multiple shells rdf the distance is the mean value of all shells
     '''
+    # used for wasserstein distance
+    emd_bins = np.linspace(0, 10, 101)
+
     rdf_1 = baseline_rdf
     rdf_emd = pd.DataFrame(columns=['baseline'])
 
@@ -318,15 +378,55 @@ def rdf_similarity(baseline_rdf, all_rdf):
             rdf_len = np.array([len(rdf_1), len(rdf_2)]).min()
             shell_distances = []
             for j in range(rdf_len):
-                shell_distances.append(emd(rdf_1[j], rdf_2[j], dist_matrix))
+                shell_distances.append(wasserstein_distance(emd_bins, emd_bins, rdf_1[j], rdf_2[j]))
+                #shell_distances.append(emd(rdf_1[j], rdf_2[j], dist_matrix))
             rdf_emd.loc[d['task_id']] = np.array(shell_distances).mean()
 
     elif len(rdf_1.shape) == 1:
         dist_matrix = dist_matrix_1d(len(rdf_1))
         for rdf_2 in all_rdf:
-            rdf_emd.loc[d['task_id']] = emd(rdf_1, rdf_2, dist_matrix)
+            rdf_emd.loc[d['task_id']] = wasserstein_distance(emd_bins, emd_bins, rdf_1, rdf_2)
+            #rdf_emd.loc[d['task_id']] = emd(rdf_1, rdf_2, dist_matrix)
     
     return rdf_emd
+
+
+def rdf_similarity_matrix_large_dataset(data, all_rdf, rdf_len=100, indice=[0,1], method='emd'):
+    '''
+    Calculate the earth mover's distance between all RDF pairs in a large dataset
+    Scipy wassertein is used
+    Using Guassian smearing for rdf
+
+    Args:
+        data: data from json
+        all_rdf:
+        rdf_len:
+        indice:start and end of the index of the dataset
+    Return:
+        a pandas dataframe with all pairwise distance
+        for multiple shells rdf the distance is the mean value of all shells
+    '''
+    # used for wasserstein distance
+    emd_bins = np.linspace(0, 10, 101)
+
+    df = pd.DataFrame([])
+    for i1 in range(indice[0], indice[1]):
+        d1 = data[i1]
+        for i2, d2 in enumerate(data):
+            if i1 <= i2:
+                shell_distances = []
+                for j in range(rdf_len):
+                    if method == 'emd':
+                        shell_distances.append(wasserstein_distance(emd_bins, emd_bins, 
+                                                                    all_rdf[i1][j], all_rdf[i2][j]))
+                    elif method == 'cosine':
+                        shell_distances.append(spatial.distance.cosine(all_rdf[i1][j], all_rdf[i2][j]))
+                    
+                    df.loc[d1['task_id'], d2['task_id']] = round(np.array(shell_distances).mean(), 5)
+                    #df.loc[d2['task_id'], d1['task_id']] = np.array(shell_distances).mean()
+            else:
+                df.loc[d1['task_id'], d2['task_id']] = np.nan
+    return df 
 
 
 def rdf_similarity_matrix(data, all_rdf, order=None, method='emd'):
@@ -354,6 +454,9 @@ def rdf_similarity_matrix(data, all_rdf, order=None, method='emd'):
         a pandas dataframe with all pairwise distance
         for multiple shells rdf the distance is the mean value of all shells
     '''
+    # used for wasserstein distance
+    emd_bins = np.linspace(0, 10, 101)
+
     if len(all_rdf[0].shape) == 2:
         # typically for extend RDF
         df = pd.DataFrame([])
@@ -365,12 +468,13 @@ def rdf_similarity_matrix(data, all_rdf, order=None, method='emd'):
                     shell_distances = []
                     for j in range(rdf_len):
                         if method == 'emd':
-                            #shell_distances.append(wasserstein_distance(all_rdf[i1][j], all_rdf[i2][j]))
+                            #shell_distances.append(wasserstein_distance(emd_bins, emd_bins, 
+                            #                                            all_rdf[i1][j], all_rdf[i2][j]))
                             shell_distances.append(emd(all_rdf[i1][j], all_rdf[i2][j], dist_matrix))
                         elif method == 'linear' or method == 'linear-reciprocal':
                             shell_distances.append(np.inner(all_rdf[i1][j], all_rdf[i2][j]))
                         elif method == 'cosine' or method == 'cosine-reciprocal':
-                            shell_distance.append(spatial.distance.cosine(all_rdf[i1][j], all_rdf[i2][j]))
+                            shell_distances.append(spatial.distance.cosine(all_rdf[i1][j], all_rdf[i2][j]))
 
                     if method == 'emd' or method == 'linear' or method == 'cosine':
                         df.loc[d1['task_id'], d2['task_id']] = np.array(shell_distances).mean()
@@ -381,18 +485,20 @@ def rdf_similarity_matrix(data, all_rdf, order=None, method='emd'):
                         df.loc[d2['task_id'], d1['task_id']] = 1.0 / (np.array(shell_distances).mean() + 1e-11)    
 
     elif len(all_rdf[0].shape) == 1:
-        # typically for vanilla RDF
+        # typically for vanilla RDF and other 1D input
         df = pd.DataFrame([])
         dist_matrix = dist_matrix_1d(len(all_rdf[0]))
         for i1, d1 in enumerate(tqdm(data, desc='rdf similarity', mininterval=60)):
             for i2, d2 in enumerate(data):
                 if i1 <= i2:
                     if method == 'emd':
-                        #shell_distance = wasserstein_distance(all_rdf[i1], all_rdf[i2])
-                        shell_distance = emd(all_rdf[i1], all_rdf[i2], dist_matrix)
-                    elif method == 'linear':
+                        # see above for explanation and comparision of these two methods
+                        shell_distance = wasserstein_distance(emd_bins, emd_bins, 
+                                                            all_rdf[i1], all_rdf[i2])
+                        # shell_distance = emd(all_rdf[i1], all_rdf[i2], dist_matrix)
+                    elif method == 'linear' or method == 'cosine':
                         shell_distance = np.inner(all_rdf[i1], all_rdf[i2])
-                    elif method == 'linear-reciprocal':
+                    elif method == 'linear-reciprocal' or method == 'cosine-reciprocal':
                         # add a small number 1e-11 to avoid dividing by zero
                         shell_distance = 1.0 / (np.inner(all_rdf[i1], all_rdf[i2]) + 1e-11)
                     df.loc[d1['task_id'], d2['task_id']] = shell_distance
@@ -419,6 +525,7 @@ def rdf_similarity_matrix(data, all_rdf, order=None, method='emd'):
         np.fill_diagonal(df.values, 0)
     
     return df 
+
 
 
 def rdf_similarity_visualize(data, all_rdf, mode, base_id=31):
@@ -505,8 +612,10 @@ if __name__ == '__main__':
                         help='which property to be calculated: \n' +
                             '   rdf_similarity: \n' +
                             '   rdf_similarity_matrix: \n' +
+                            '   rdf_similarity_matrix_large_dataset: \n' +
                             '   composition_similarity_matrix: \n' +
                             '   composition_similarity: \n' +
+                            '   composition_similarity_matrix_large_dataset: \n' +
                             '   rdf_similarity_visualize: \n' +
                             '   find_same_structure: find all structures giving same rdf \n' +
                             '   find_same_rdf: find all same rdf \n' +
@@ -515,6 +624,8 @@ if __name__ == '__main__':
                       )
     parser.add_argument('--baseline_id', type=str, default='mp-1000',
                         help='only used for rdf_similarity composition_similarity tasks')
+    parser.add_argument('--data_indice', type=str, default='0_1',
+                        help='start and end indice of the sub dataset')
 
     args = parser.parse_args()
     input_file = args.input_file
@@ -522,6 +633,7 @@ if __name__ == '__main__':
     rdf_dir = args.rdf_dir
     task = args.task
     baseline_id = args.baseline_id
+    indice = list(map(int, args.data_indice.split('_')))
 
     with open (input_file,'r') as f:
         data = json.load(f)
@@ -536,9 +648,17 @@ if __name__ == '__main__':
         all_rdf = rdf_read(data, rdf_dir)
         # sometimes trim all the rdf to same length will give better EMD results
         # all_rdf = rdf_trim(all_rdf, 100)
-        for similar_measure in ['cosine-reciprocal']:
+        for similar_measure in ['cosine']:
             df = rdf_similarity_matrix(data, all_rdf, method=similar_measure, order=None)
             df.to_csv(output_file + '_' + similar_measure + '_similar_matrix.csv')
+
+    elif task == 'rdf_similarity_matrix_large_dataset':
+        all_rdf = rdf_read(data, rdf_dir)
+        # trim all the rdf to same length to save time
+        rdf_len = 100
+        all_rdf = rdf_trim(all_rdf, trim=rdf_len)
+        df = rdf_similarity_matrix_large_dataset(data, all_rdf, rdf_len=rdf_len, indice=indice)
+        df.to_csv((output_file + str(indice[0]) + '_' + str(indice[1]) + '.csv')
 
     elif task == 'composition_similarity':
         elem_vectors, elem_symbols = composition_one_hot(data)
@@ -549,6 +669,11 @@ if __name__ == '__main__':
         elem_vectors, elem_symbols = composition_one_hot(data)
         compo_emd = composition_similarity_matrix(elem_vectors)
         compo_emd.to_csv(output_file + '.csv')
+
+    elif task == 'composition_similarity_matrix_large_dataset':
+        elem_vectors, elem_symbols = composition_one_hot(data)
+        compo_emd = composition_similarity_matrix_large_dataset(elem_vectors, indice=indice)
+        compo_emd.to_csv(output_file + str(indice[0]) + '_' + str(indice[1]) + '.csv')
 
     elif task == 'rdf_similarity_visualize':
         all_rdf = rdf_read(data, rdf_dir)
