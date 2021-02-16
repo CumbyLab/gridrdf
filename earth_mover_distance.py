@@ -174,7 +174,7 @@ def dist_matrix_1d(nbin=100):
     return dist_matrix.values
 
 
-def nn_bulk_modulus(baseline_id, data, n_nn=1, emd='both'):
+def nn_bulk_modulus_single(baseline_id, data, n_nn=1, emd='both'):
     '''
     Using the calucated EMD values and find the n nearest neighbor to estimate 
     bulk modulus
@@ -233,6 +233,145 @@ def nn_bulk_modulus(baseline_id, data, n_nn=1, emd='both'):
             nn_mps.values[0][0] )
 
 
+def nn_bulk_modulus_matrix_add(data, nn=1, simi_matrix=['extended_rdf_emd'], scale=True):
+    '''
+    Deprecated. The adding similarity matrix is worse than currently used
+    Using the calucated EMD values and find the n nearest neighbor to estimate 
+    bulk modulus. If two EMD matrix are used, then add the values of the two matrix
+    
+    Args:
+        data: mp json data from file
+        nn: number of nearest neighbors
+        matrix: a list of the emd values used
+            extended_rdf: emd of extended rdf
+            original_rdf:
+            composition: only composition emd
+        scale: no implement yet
+    Return:
+        The baseline mp-id
+        Ground truth of bulk modluls
+        Estimation of the bulk modulus
+        EMD distance between the nearest neighbor and baseline
+        mp-id of the nearest neighbor
+    '''
+    # read the modulus data and convert to pandas dataframe
+    # for the usage of later ground truth and mp ids
+    df_mp = pd.DataFrame.from_dict(data)
+    df_mp = df_mp.set_index('task_id')
+
+    # read the emd matrix
+    total_emd = pd.DataFrame(np.zeros((len(data), len(data))),
+                            index=df_mp.index, columns=df_mp.index)
+    if 'extended_rdf_emd' in simi_matrix:
+        rdf_emd_file = os.path.join(sys.path[0], 'extended_rdf_emd.csv')
+        rdf_emd = pd.read_csv(rdf_emd_file, index_col=0)
+        rdf_emd = rdf_emd.fillna(0).add(rdf_emd.transpose().fillna(0))
+        if scale:
+            total_emd = total_emd.add(rdf_emd * 10)
+        else:
+            total_emd = total_emd.add(rdf_emd)
+
+    if 'extended_rdf_cosine' in simi_matrix:
+        rdf_emd_file = os.path.join(sys.path[0], 'extended_rdf_cosine.csv')
+        rdf_emd = pd.read_csv(rdf_emd_file, index_col=0)
+        rdf_emd = rdf_emd.fillna(0).add(rdf_emd.transpose().fillna(0))
+        total_emd = total_emd.add(rdf_emd)
+
+    if 'composition_emd' in simi_matrix:
+        compos_emd_file = os.path.join(sys.path[0], 'composition_emd.csv')
+        compos_emd = pd.read_csv(compos_emd_file, index_col=0)
+        compos_emd = compos_emd.fillna(0).add(compos_emd.transpose().fillna(0))
+        total_emd = total_emd.add(compos_emd)
+
+    pred_k = pd.DataFrame(index=df_mp.index,
+                        columns=['ground_truth', 'predict_bulk_modulus', 
+                                    'smallest_emd', 'nearest_neighbor'])
+    for baseline_id in df_mp.index.values:
+        nn_mps = total_emd[baseline_id].drop(baseline_id).nsmallest(nn)
+
+        aver_modul = 0
+        for task_id in nn_mps.index.values:
+            aver_modul += df_mp['elasticity.K_VRH'][task_id]
+
+        # df.loc index go first, df[] column go first
+        pred_k.loc[baseline_id]['predict_bulk_modulus'] = aver_modul / nn
+        pred_k.loc[baseline_id]['ground_truth'] = df_mp['elasticity.K_VRH'][baseline_id]
+        pred_k.loc[baseline_id]['smallest_emd'] = nn_mps.values[0]
+        pred_k.loc[baseline_id]['nearest_neighbor'] = nn_mps.index.values[0]
+
+    return pred_k
+
+
+def nn_bulk_modulus_matrix_step(data, simi_matrix=['extended_rdf_emd','composition_emd']):
+    '''
+    Using the calucated EMD values and find the n nearest neighbor to estimate 
+    bulk modulus
+
+    If two similaity matrix is used, first search the nearest neighbors of the first matrix, 
+    if same values are found, then use the second matrix to find which is the nearest
+
+    Args:
+        data: mp json data from file
+        emd: a list of the emd values used, the first one will be used for the
+            first nearest neighbor search. values:
+                extended_rdf: emd of extended rdfs
+                extended_rdf_cos: cosine similarity of the extended rdfs
+                composition: only composition emd
+    Return:
+        The baseline mp-id
+        Ground truth of bulk modluls
+        Estimation of the bulk modulus
+        EMD distance between the nearest neighbor and baseline
+        mp-id of the nearest neighbor
+    '''
+    # read the modulus data and convert to pandas dataframe
+    # for the usage of later ground truth and mp ids
+    df_mp = pd.DataFrame.from_dict(data)
+    df_mp = df_mp.set_index('task_id')
+
+    # read the emd matrix
+    total_emd = pd.DataFrame(np.zeros((len(data), len(data))),
+                            index=df_mp.index, columns=df_mp.index)
+    
+    file_1 = os.path.join(sys.path[0], simi_matrix[0]+'.csv')
+    simi_mat_1 = pd.read_csv(file_1, index_col=0)
+    simi_mat_1 = simi_mat_1.fillna(0).add(simi_mat_1.transpose().fillna(0))
+
+    file_2 = os.path.join(sys.path[0], simi_matrix[1]+'.csv')
+    simi_mat_2 = pd.read_csv(file_2, index_col=0)
+    simi_mat_2 = simi_mat_2.fillna(0).add(simi_mat_2.transpose().fillna(0))
+
+    pred_k = pd.DataFrame(index=df_mp.index,
+                        columns=['ground_truth', 'predict_bulk_modulus', 
+                                    'emd_1', 'emd_2', 'nearest_neighbor'])
+    for baseline_id in df_mp.index.values:
+        single_emd = simi_mat_1[baseline_id].drop(baseline_id)
+        # fount the indice with the smallest value
+        nn_idx = single_emd.where(single_emd == single_emd.min()).dropna()
+        nn_idx = nn_idx.to_frame()
+        
+        if len(nn_idx) > 1:
+            # if there are multiple structures have the same end,
+            # then determine the nearest by considering the second similarity matrix
+            new_list = []
+            for task_id in nn_idx.index.values:
+                new_list.append(simi_mat_2[baseline_id][task_id])
+            nn_idx['new'] = new_list
+            nn_mps = nn_idx.nsmallest(1, 'new')
+        else:
+            nn_idx['new'] = [0]
+            nn_mps = nn_idx
+
+        # df.loc index go first, df[] column go first
+        pred_k.loc[baseline_id]['predict_bulk_modulus'] = df_mp['elasticity.K_VRH'][nn_mps.index.values[0]]
+        pred_k.loc[baseline_id]['ground_truth'] = df_mp['elasticity.K_VRH'][baseline_id]
+        pred_k.loc[baseline_id]['emd_1'] = nn_mps.values[0][0]
+        pred_k.loc[baseline_id]['emd_2'] = nn_mps.values[0][1]
+        pred_k.loc[baseline_id]['nearest_neighbor'] = nn_mps.index.values[0]
+
+    return pred_k
+
+
 def composition_similarity(baseline_id, data, index='z_number_78'):
     '''
     Calcalate the earth mover's distance between the baseline structure and all others
@@ -265,7 +404,7 @@ def composition_similarity(baseline_id, data, index='z_number_78'):
     return compo_emd
 
 
-def composition_similarity_matrix(data, index='z_number_78'):
+def composition_similarity_matrix(data, indice=None, index='z_number_78'):
     '''
     Calcalate pairwise earth mover's distance of all compositions, the composition should be 
     a 78-element vector, as the elemental similarity_matrix is 78x78 matrix in the order of  
@@ -285,49 +424,10 @@ def composition_similarity_matrix(data, index='z_number_78'):
     '''
     # define the indice by call element_indice function
     element_indice()
-    
-    dist = []
-    elem_similarity_file = os.path.join(sys.path[0], 'similarity_matrix.csv')
-    dist_matrix = pd.read_csv(elem_similarity_file, index_col='ionA')
-    dist_matrix = 1 / (np.log10(1 / dist_matrix + 1))
 
-    if index == 'pettifor':
-        dist_matrix = dist_matrix.reindex(columns=pettifor, index=pettifor) 
-    # the earth mover's distance package need order C and float64 astype('float64')
-    dist_matrix = dist_matrix.values.copy(order='C')
-
-    compo_emd = pd.DataFrame([])
-    for i1, mp_id_1 in enumerate(tqdm(data.index, mininterval=60)):
-        for i2, mp_id_2 in enumerate(data.index):
-            if i1 <= i2:
-                emd_value = emd(data.loc[mp_id_1].values.copy(order='C'), 
-                                data.loc[mp_id_2].values.copy(order='C'), 
-                                dist_matrix)
-                compo_emd.loc[mp_id_1, mp_id_2] = emd_value
-                compo_emd.loc[mp_id_2, mp_id_1] = emd_value
-    return compo_emd
-
-
-def composition_similarity_matrix_large_dataset(data, indice=[0,1], index='z_number_78'):
-    '''
-    Calcalate pairwise earth mover's distance of all compositions, the composition should be 
-    a 78-element vector, as the elemental similarity_matrix is 78x78 matrix in the order of  
-    atom numbers
-
-    Args:
-        data: pandas dataframe of element vectors for all the structures
-        index: see function element_indice for details
-            z_number_78: (default) in the order of atomic number, this is default 
-                because the similarity matrix is in this order
-            z_number: see periodic_table in function element_indice
-            pettifor: see function element_indice for details
-            modified_pettifor: see element_indice
-            elem_present: the vector only contain the elements presented in the dataset
-    Return:
-        a pandas dataframe of pairwise EMD with mp-ids as index
-    '''
-    # define the indice by call element_indice function
-    element_indice()
+    # if indice is None, then loop over the whole dataset
+    if not indice:
+        indice = [0, len(data)]
     
     dist = []
     elem_similarity_file = os.path.join(sys.path[0], 'similarity_matrix.csv')
@@ -391,7 +491,7 @@ def rdf_similarity(baseline_rdf, all_rdf):
     return rdf_emd
 
 
-def rdf_similarity_matrix_large_dataset(data, all_rdf, rdf_len=100, indice=[0,1], method='emd'):
+def rdf_similarity_matrix(data, all_rdf, indice=None, method='emd'):
     '''
     Calculate the earth mover's distance between all RDF pairs in a large dataset
     Scipy wassertein is used
@@ -400,8 +500,9 @@ def rdf_similarity_matrix_large_dataset(data, all_rdf, rdf_len=100, indice=[0,1]
     Args:
         data: data from json
         all_rdf:
-        rdf_len:
-        indice:start and end of the index of the dataset
+        indice:start and end of the index of the dataset, this parameter is useful when 
+            the dataset is large, and the calculations of the whole matrix must be splitted
+            into different tasks
     Return:
         a pandas dataframe with all pairwise distance
         for multiple shells rdf the distance is the mean value of all shells
@@ -409,28 +510,54 @@ def rdf_similarity_matrix_large_dataset(data, all_rdf, rdf_len=100, indice=[0,1]
     # used for wasserstein distance
     emd_bins = np.linspace(0, 10, 101)
 
-    df = pd.DataFrame([])
-    for i1 in range(indice[0], indice[1]):
-        d1 = data[i1]
-        for i2, d2 in enumerate(data):
-            if i1 <= i2:
-                shell_distances = []
-                for j in range(rdf_len):
+    # if indice is None, then loop over the whole dataset
+    if not indice:
+        indice = [0, len(data)]
+
+    if len(all_rdf[0].shape) == 2:
+        # typically for extend RDF
+        df = pd.DataFrame([])
+        for i1 in range(indice[0], indice[1]):
+            d1 = data[i1]
+            for i2, d2 in enumerate(data):
+                if i1 <= i2:
+                    shell_distances = []
+                    for j in range(len(all_rdf[0])):
+                        if method == 'emd':
+                            shell_distances.append(wasserstein_distance(emd_bins, emd_bins, 
+                                                                        all_rdf[i1][j], all_rdf[i2][j]))
+                        elif method == 'cosine':
+                            shell_distances.append(spatial.distance.cosine(all_rdf[i1][j], all_rdf[i2][j]))
+                        
+                    df.loc[d1['task_id'], d2['task_id']] = np.array(shell_distances).mean()
+                else:
+                    df.loc[d1['task_id'], d2['task_id']] = np.nan
+    elif len(all_rdf[0].shape) == 1:
+        # typically for vanilla RDF and other 1D input
+        df = pd.DataFrame([])
+        for i1 in range(indice[0], indice[1]):
+            d1 = data[i1]
+            for i2, d2 in enumerate(data):
+                if i1 <= i2:
                     if method == 'emd':
-                        shell_distances.append(wasserstein_distance(emd_bins, emd_bins, 
-                                                                    all_rdf[i1][j], all_rdf[i2][j]))
+                        shell_distance = wasserstein_distance(emd_bins, emd_bins, 
+                                                            all_rdf[i1], all_rdf[i2])
                     elif method == 'cosine':
-                        shell_distances.append(spatial.distance.cosine(all_rdf[i1][j], all_rdf[i2][j]))
-                    
-                    df.loc[d1['task_id'], d2['task_id']] = round(np.array(shell_distances).mean(), 5)
-                    #df.loc[d2['task_id'], d1['task_id']] = np.array(shell_distances).mean()
-            else:
-                df.loc[d1['task_id'], d2['task_id']] = np.nan
+                        shell_distance = spatial.distance.cosine(all_rdf[i1], all_rdf[i2])
+
+                    df.loc[d1['task_id'], d2['task_id']] = shell_distance
+                else:
+                    df.loc[d1['task_id'], d2['task_id']] = np.nan
     return df 
 
 
-def rdf_similarity_matrix(data, all_rdf, order=None, method='emd'):
+def rdf_similarity_matrix_old(data, all_rdf, order=None, method='emd'):
     '''
+    Deprecated. Have some methods there no longer used
+        1. (reciprical) inner product as a similarity measure
+        2. emd method implemented in pyemd
+        3. the matrix in the order of lattice parameter or symmetry
+
     Calculate the earth mover's distance between two RDFs
     Current support vanilla rdf and extend rdf
     Using Guassian smearing for rdf
@@ -527,7 +654,6 @@ def rdf_similarity_matrix(data, all_rdf, order=None, method='emd'):
     return df 
 
 
-
 def rdf_similarity_visualize(data, all_rdf, mode, base_id=31):
     '''
     Visualization of rdf similarity results.
@@ -612,19 +738,17 @@ if __name__ == '__main__':
                         help='which property to be calculated: \n' +
                             '   rdf_similarity: \n' +
                             '   rdf_similarity_matrix: \n' +
-                            '   rdf_similarity_matrix_large_dataset: \n' +
                             '   composition_similarity_matrix: \n' +
                             '   composition_similarity: \n' +
-                            '   composition_similarity_matrix_large_dataset: \n' +
                             '   rdf_similarity_visualize: \n' +
                             '   find_same_structure: find all structures giving same rdf \n' +
                             '   find_same_rdf: find all same rdf \n' +
                             '   nn_bulk_modulus: predict bulk modulus using nearest neighbor \n' +
                             '   '
                       )
-    parser.add_argument('--baseline_id', type=str, default='mp-1000',
-                        help='only used for rdf_similarity composition_similarity tasks')
-    parser.add_argument('--data_indice', type=str, default='0_1',
+    parser.add_argument('--baseline_id', type=str, default=None,
+                        help='only used for single rdf_similarity composition_similarity tasks')
+    parser.add_argument('--data_indice', type=str, default=None,
                         help='start and end indice of the sub dataset')
 
     args = parser.parse_args()
@@ -633,7 +757,10 @@ if __name__ == '__main__':
     rdf_dir = args.rdf_dir
     task = args.task
     baseline_id = args.baseline_id
-    indice = list(map(int, args.data_indice.split('_')))
+    if isinstance(args.data_indice, str):
+        indice = list(map(int, args.data_indice.split('_')))
+    else:
+        indice = None
 
     with open (input_file,'r') as f:
         data = json.load(f)
@@ -646,19 +773,14 @@ if __name__ == '__main__':
 
     elif task == 'rdf_similarity_matrix':
         all_rdf = rdf_read(data, rdf_dir)
-        # sometimes trim all the rdf to same length will give better EMD results
-        # all_rdf = rdf_trim(all_rdf, 100)
-        for similar_measure in ['cosine']:
-            df = rdf_similarity_matrix(data, all_rdf, method=similar_measure, order=None)
-            df.to_csv(output_file + '_' + similar_measure + '_similar_matrix.csv')
-
-    elif task == 'rdf_similarity_matrix_large_dataset':
-        all_rdf = rdf_read(data, rdf_dir)
         # trim all the rdf to same length to save time
         rdf_len = 100
         all_rdf = rdf_trim(all_rdf, trim=rdf_len)
-        df = rdf_similarity_matrix_large_dataset(data, all_rdf, rdf_len=rdf_len, indice=indice)
-        df.to_csv((output_file + str(indice[0]) + '_' + str(indice[1]) + '.csv')
+        df = rdf_similarity_matrix(data, all_rdf, indice=indice, method='cosine')
+        if indice:
+            df.to_csv(output_file + str(indice[0]) + '_' + str(indice[1]) + '.csv')
+        else:
+            df.to_csv(output_file + '_whole_matrix.csv')
 
     elif task == 'composition_similarity':
         elem_vectors, elem_symbols = composition_one_hot(data)
@@ -667,13 +789,11 @@ if __name__ == '__main__':
 
     elif task == 'composition_similarity_matrix':
         elem_vectors, elem_symbols = composition_one_hot(data)
-        compo_emd = composition_similarity_matrix(elem_vectors)
-        compo_emd.to_csv(output_file + '.csv')
-
-    elif task == 'composition_similarity_matrix_large_dataset':
-        elem_vectors, elem_symbols = composition_one_hot(data)
-        compo_emd = composition_similarity_matrix_large_dataset(elem_vectors, indice=indice)
-        compo_emd.to_csv(output_file + str(indice[0]) + '_' + str(indice[1]) + '.csv')
+        compo_emd = composition_similarity_matrix(elem_vectors, indice=indice)
+        if indice:
+            compo_emd.to_csv(output_file + str(indice[0]) + '_' + str(indice[1]) + '.csv')
+        else:
+            compo_emd.to_csv(output_file + '_whole_matrix.csv')
 
     elif task == 'rdf_similarity_visualize':
         all_rdf = rdf_read(data, rdf_dir)
@@ -696,7 +816,13 @@ if __name__ == '__main__':
             json.dump(match_list, f, indent=1)
 
     elif task == 'nn_bulk_modulus':
-        print(os.path.join(sys.path[0], '../rdf_emd/'))
-        for f in os.listdir(os.path.join(sys.path[0], '../rdf_emd/')):
-            print(nn_bulk_modulus(f.replace('_emd.csv', ''), data))
+        if baseline_id:
+            # for single point calculation
+            mp_ids = os.listdir(os.path.join(sys.path[0], '../rdf_emd/'))
+            for f in mp_ids:
+                print(nn_bulk_modulus_single(f.replace('_emd.csv', ''), data))
+        else:
+            pred_k = nn_bulk_modulus_matrix_add(data, simi_matrix=['extended_rdf_emd', 'composition_emd'])
+            pred_k.to_csv(output_file + 'pred_k.csv')
+
 
