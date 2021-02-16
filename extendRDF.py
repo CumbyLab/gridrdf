@@ -15,7 +15,6 @@ import logging
 import itertools 
 from pymatgen import Structure, Lattice
 from sklearn.neighbors import KernelDensity
-from scipy.stats import wasserstein_distance
 from pyemd import emd
 
 

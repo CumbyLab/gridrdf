@@ -6,7 +6,6 @@ import time
 import gzip
 import argparse
 from tqdm import tqdm
-from scipy.stats import wasserstein_distance
 from pyemd import emd, emd_with_flow
 from pymatgen import Structure
 from pymatgen.analysis.local_env import CrystalNN
@@ -17,9 +16,8 @@ except:
     print('matminer is not installed, cannot calculate structural complexity')
 
 from extendRDF import rdf_histo, rdf_kde, get_rdf_and_atoms, shell_similarity
-from composition import elements_count, elements_selection, bonding_type
+from composition import elements_count, bonding_type
 from otherRDFs import origin_rdf_histo
-from data_io import rdf_read
 
 
 def batch_rdf(data, max_dist=10, bin_size=0.1, method='bin', normalize=True, 
@@ -113,13 +111,10 @@ def rdf_trim(all_rdf, trim='minimum'):
     elif isinstance(trim, int):
         for i, rdf_len in enumerate(rdf_lens):
             if rdf_len < trim:
-                a = int ( trim / rdf_len)
-                b = trim % rdf_len
-                if a != 1:
-                    all_rdf[i] = np.tile(all_rdf[i], a)
+                b = trim - rdf_len
                 if b != 0:
                     if len(all_rdf[0].shape) == 2:
-                        nbins = len(all_rdf[i][0])
+                        nbins = len(all_rdf[i][0][0])
                         all_rdf[i] = np.append( all_rdf[i], [[0.0] * nbins] * b, axis=0 )
                     elif len(all_rdf[0].shape) == 1:
                         all_rdf[i] = np.append( all_rdf[i], [0.0] * b )
@@ -317,11 +312,8 @@ if __name__ == '__main__':
                             '   composition: element-wise statistics of all compositions \n' +
                             '   bonding_type: \n' +
                             '   shell_similarity: \n' +
-                            '   subset_composition: select a subset which have specified elements: \n' +
-                            '   subset_space_group: '
+                            '   '
                       )
-    parser.add_argument('--elem_list', type=str, default='O',
-                        help='only used for subset task')
     parser.add_argument('--max_dist', type=float, default=10.0,
                         help='Cutoff distance of the RDF')
 
@@ -331,7 +323,6 @@ if __name__ == '__main__':
     rdf_dir = args.rdf_dir
     task = args.task
 
-    elem_list = args.elem_list
     max_dist = args.max_dist
 
     with open(input_file,'r') as f:
@@ -375,26 +366,7 @@ if __name__ == '__main__':
         with open(input_file.replace('v7','v8'), 'w') as f:
             json.dump(data, f, indent=1)
 
-    elif task == 'subset_composition':
-        print(elem_list)
-        subset = elements_selection(data, elem_list=elem_list.split(), mode='consist')
-        # note that 'data' is also changed because it is defined in __main__
-        with open('subset.json', 'w') as f:
-            json.dump(subset, f, indent=1)
 
-    elif task == 'subset_space_group':
-        sg_grouped_structs = {}
-        for sg_num in range(230, 0, -1):
-            sg_grouped_structs[sg_num] = []
-    
-        for d in data:
-            struct = Structure.from_str(d['cif'], fmt='cif')
-            sg_num = struct.get_space_group_info()[1]
-            sg_grouped_structs[sg_num].append(d)
-
-        for sg_num in range(230, 0, -1):
-            with open('../subset/subset_' + str(sg_num) + '.json', 'w') as f:
-                json.dump(sg_grouped_structs[sg_num], f, indent=1)
 
     else:
         print('This task is not supported')

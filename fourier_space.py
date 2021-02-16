@@ -297,8 +297,8 @@ class XRDCalculator(AbstractDiffractionPatternCalculator):
                     g_dot_r = np.dot(fcoords, np.transpose([hkl])).T[0]
 
                     # Highly vectorized computation of atomic scattering factors.
-                    fs = zs #- 41.78214 * s2 * np.sum(
-                        #coeffs[:, :, 0] * np.exp(-coeffs[:, :, 1] * s2), axis=1)
+                    fs = zs - 41.78214 * s2 * np.sum(
+                        coeffs[:, :, 0] * np.exp(-coeffs[:, :, 1] * s2), axis=1)
 
                     dw_correction = np.exp(-dwfactors * s2)
 
