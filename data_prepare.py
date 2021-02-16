@@ -1,19 +1,27 @@
 
 '''
-for rdf in smooth_rdf vanilla_rdf ; do cd $rdf ; for file in pero_distortion pero_lattice rp_srtio3 ; do python ../../../descriptors/data_explore.py --input_file  ../$file.json --task rdf_similarity  --output_file ../${file}_$rdf ; done ; cd .. ; done 
+for rdf in smooth_rdf vanilla_rdf ; do cd $rdf ; \
+for file in pero_distortion pero_lattice rp_srtio3 ; \
+do python ../../../descriptors/data_explore.py --input_file ../$file.json \
+ --task rdf_similarity  --output_file ../${file}_$rdf ; \
+done ; cd .. ; done 
 '''
 
 import json
 import math
+import argparse
 import numpy as np
 import pandas as pd
 from collections import Counter
 from pymatgen import Structure, Lattice, MPRester
 
+from composition import elements_selection
+from data_io import rdf_read
+
 
 def nacl():
     '''
-    Generate NaCl structure
+    Generate NaCl structure, ususlly for test purpose
 
     Args:
         None
@@ -190,5 +198,62 @@ def perovskite_different_lattice():
     with open('pero_lattice.json','w') as f:
         json.dump(all_dict, f, indent=1)
 
+
 if __name__ == '__main__':
-    pass
+    parser = argparse.ArgumentParser(description='Dataset prepare',
+                                    formatter_class=argparse.RawTextHelpFormatter)
+    parser.add_argument('--input_file', type=str, default='../MP_modulus.json',
+                        help='the bulk modulus and structure from Materials Project')
+    parser.add_argument('--output_file', type=str, default='subset.json',
+                        help='outpu')
+    parser.add_argument('--rdf_dir', type=str, default='./',
+                        help='dir has all the rdf files')
+    parser.add_argument('--task', type=str, default='',
+                        help='what to do with the dataset: \n' +
+                            '   subset_composition: select a subset which have specified elements: \n' +
+                            '   subset_rdf_len: drop all the ext-RDF with a length less than 100 \n' +
+                            '   subset_space_group: '
+                      )
+    parser.add_argument('--elem_list', type=str, default='O',
+                        help='only used for subset task')
+
+    args = parser.parse_args()
+    input_file = args.input_file
+    output_file = args.output_file
+    rdf_dir = args.rdf_dir
+    task = args.task
+    elem_list = args.elem_list
+
+    with open(input_file,'r') as f:
+        data = json.load(f)
+    
+    if task == 'subset_composition':
+        print(elem_list)
+        subset = elements_selection(data, elem_list=elem_list.split(), mode='consist')
+        # note that 'data' is also changed because it is defined in __main__
+        with open(output_file, 'w') as f:
+            json.dump(subset, f, indent=1)
+
+    if task == 'subset_rdf_len':
+        all_rdf = rdf_read(data, rdf_dir)
+        # note that 'data' is also changed because it is defined in __main__
+        for i, d in enumerate(data[:]):
+            if len(all_rdf[i]) < 100:
+                data.remove(d)
+
+        with open(output_file, 'w') as f:
+            json.dump(data, f, indent=1)
+
+    elif task == 'subset_space_group':
+        sg_grouped_structs = {}
+        for sg_num in range(230, 0, -1):
+            sg_grouped_structs[sg_num] = []
+    
+        for d in data:
+            struct = Structure.from_str(d['cif'], fmt='cif')
+            sg_num = struct.get_space_group_info()[1]
+            sg_grouped_structs[sg_num].append(d)
+
+        for sg_num in range(230, 0, -1):
+            with open(output_file + str(sg_num) + '.json', 'w') as f:
+                json.dump(sg_grouped_structs[sg_num], f, indent=1)
