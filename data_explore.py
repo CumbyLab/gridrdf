@@ -5,6 +5,7 @@ import json
 import time
 import gzip
 import argparse
+import os
 from tqdm import tqdm
 from pyemd import emd, emd_with_flow
 from pymatgen import Structure
@@ -20,8 +21,14 @@ from composition import elements_count, bonding_type
 from otherRDFs import origin_rdf_histo
 
 
-def batch_rdf(data, max_dist=10, bin_size=0.1, method='bin', normalize=True, 
-                gzip_file=False):
+def batch_rdf(data,
+              max_dist=10,
+              bin_size=0.1,
+              method='bin',
+              normalize=True, 
+              gzip_file=False,
+              output_dir = './'
+              ):
     '''
     Read structures and output the extend RDF
 
@@ -53,7 +60,7 @@ def batch_rdf(data, max_dist=10, bin_size=0.1, method='bin', normalize=True,
         else:
             print('This method is not supported in RDF calculation ')
 
-        outfile = d['task_id']
+        outfile = os.path.normpath(os.path.join(output_dir, d['task_id']))
         if gzip_file:
             with gzip.open(outfile+'.gz', 'w') as f:
                 # not yet test, need test before use
@@ -333,9 +340,9 @@ if __name__ == '__main__':
         outfile = '../num_shell'
         np.savetxt(outfile, results, delimiter=' ', fmt='%.3f')
     elif task == 'extend_rdf_bin':
-        batch_rdf(data, max_dist=max_dist, method='bin')
+        batch_rdf(data, max_dist=max_dist, method='bin', output_dir = rdf_dir)
     elif task == 'extend_rdf_kde':
-        batch_rdf(data, max_dist=max_dist, method='kde')
+        batch_rdf(data, max_dist=max_dist, method='kde', output_dir = rdf_dir)
     elif task == 'origin_rdf':
         origin_rdf_histo(data, max_dist=max_dist)
     elif task == 'composition':
