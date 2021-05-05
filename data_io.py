@@ -2,6 +2,7 @@
 import numpy as np
 import gzip, tarfile
 from tqdm import tqdm
+import os
 
 
 def rdf_read(data, rdf_dir, zip_file=False):
@@ -18,8 +19,8 @@ def rdf_read(data, rdf_dir, zip_file=False):
         samples, and the second dimension is the flatten 1D rdf
     '''
     all_rdf = []
-    for d in tqdm(data, desc='rdf read', mininterval=60):
-        rdf_file = rdf_dir + '/' + d['task_id']
+    for d in tqdm(data, desc='rdf read', mininterval=10):
+        rdf_file = os.path.normpath(os.path.join(rdf_dir, d['task_id']))
         if zip_file:
             with gzip.open(rdf_file + '.gz', 'r') as f:
                 rdf = np.loadtxt(f, delimiter=' ')
