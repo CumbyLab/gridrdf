@@ -121,7 +121,7 @@ def rdf_trim(all_rdf, trim='minimum'):
                 b = trim - rdf_len
                 if b != 0:
                     if len(all_rdf[0].shape) == 2:
-                        nbins = len(all_rdf[i][0][0])
+                        nbins = len(all_rdf[i][0])
                         all_rdf[i] = np.append( all_rdf[i], [[0.0] * nbins] * b, axis=0 )
                     elif len(all_rdf[0].shape) == 1:
                         all_rdf[i] = np.append( all_rdf[i], [0.0] * b )
