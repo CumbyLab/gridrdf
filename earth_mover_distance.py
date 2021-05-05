@@ -233,7 +233,7 @@ def nn_bulk_modulus_single(baseline_id, data, n_nn=1, emd='both'):
             nn_mps.values[0][0] )
 
 
-def nn_bulk_modulus_matrix_add(data, nn=1, simi_matrix=['extended_rdf_emd'], scale=True):
+def nn_bulk_modulus_matrix_add(data, nn=1, simi_dir = '.', simi_matrix=['extended_rdf_emd'], scale=True):
     '''
     Deprecated. The adding similarity matrix is worse than currently used
     Using the calucated EMD values and find the n nearest neighbor to estimate 
@@ -263,7 +263,7 @@ def nn_bulk_modulus_matrix_add(data, nn=1, simi_matrix=['extended_rdf_emd'], sca
     total_emd = pd.DataFrame(np.zeros((len(data), len(data))),
                             index=df_mp.index, columns=df_mp.index)
     if 'extended_rdf_emd' in simi_matrix:
-        rdf_emd_file = os.path.join(sys.path[0], 'extended_rdf_emd.csv')
+        rdf_emd_file = os.path.join(simi_dir, 'extended_rdf_emd.csv')
         rdf_emd = pd.read_csv(rdf_emd_file, index_col=0)
         rdf_emd = rdf_emd.fillna(0).add(rdf_emd.transpose().fillna(0))
         if scale:
@@ -272,13 +272,13 @@ def nn_bulk_modulus_matrix_add(data, nn=1, simi_matrix=['extended_rdf_emd'], sca
             total_emd = total_emd.add(rdf_emd)
 
     if 'extended_rdf_cosine' in simi_matrix:
-        rdf_emd_file = os.path.join(sys.path[0], 'extended_rdf_cosine.csv')
+        rdf_emd_file = os.path.join(simi_dir, 'extended_rdf_cosine.csv')
         rdf_emd = pd.read_csv(rdf_emd_file, index_col=0)
         rdf_emd = rdf_emd.fillna(0).add(rdf_emd.transpose().fillna(0))
         total_emd = total_emd.add(rdf_emd)
 
     if 'composition_emd' in simi_matrix:
-        compos_emd_file = os.path.join(sys.path[0], 'composition_emd.csv')
+        compos_emd_file = os.path.join(simi_dir, 'composition_emd.csv')
         compos_emd = pd.read_csv(compos_emd_file, index_col=0)
         compos_emd = compos_emd.fillna(0).add(compos_emd.transpose().fillna(0))
         total_emd = total_emd.add(compos_emd)
@@ -734,6 +734,8 @@ if __name__ == '__main__':
                         help='currently for rdf similarity')
     parser.add_argument('--rdf_dir', type=str, default='./',
                         help='dir has all the rdf files')
+    parser.add_argument('--simi_dir', type=str, default='./',
+                        help='dir containing distance matrices')                        
     parser.add_argument('--task', type=str, default='rdf_similarity',
                         help='which property to be calculated: \n' +
                             '   rdf_similarity: \n' +
@@ -776,7 +778,7 @@ if __name__ == '__main__':
         # trim all the rdf to same length to save time
         rdf_len = 100
         all_rdf = rdf_trim(all_rdf, trim=rdf_len)
-        df = rdf_similarity_matrix(data, all_rdf, indice=indice, method='cosine')
+        df = rdf_similarity_matrix(data, all_rdf, indice=indice, method='emd')
         if indice:
             df.to_csv(output_file + str(indice[0]) + '_' + str(indice[1]) + '.csv')
         else:
