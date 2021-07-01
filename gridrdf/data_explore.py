@@ -1,3 +1,7 @@
+"""
+Miscellaneous utility functions to handle structures and GRID descriptions.
+
+"""
 
 import numpy as np
 import pandas as pd

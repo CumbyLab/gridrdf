@@ -1,4 +1,9 @@
+""" Train machine learning models using GRID and RDF descriptors.
 
+Utility functions to simplify training of general ML models using
+GRID, composition and different dissimilarity measures (including
+Earth mover's distance).
+"""
 import os
 import sys
 import json

@@ -1,3 +1,6 @@
+""" Module to handle composition manipulations and analyses.
+
+"""
 
 import numpy as np
 import pandas as pd

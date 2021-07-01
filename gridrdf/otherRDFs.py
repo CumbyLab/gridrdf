@@ -1,5 +1,5 @@
 '''
-Other types of RDF as benchmark to the extend RDF
+Other types of RDF as benchmark to the GRID.
 '''
 
 

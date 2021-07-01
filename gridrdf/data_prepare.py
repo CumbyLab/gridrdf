@@ -1,4 +1,11 @@
+"""
+Interface to collate or generate input data.
 
+Helper functions to simplify extraction of data from the Materials Project
+or to generate 'standard' datasets (such as artificial perovskites).
+"""
+
+# Bash script to generate RDF and GRID for structures
 '''
 for rdf in smooth_rdf vanilla_rdf ; do cd $rdf ; \
 for file in pero_distortion pero_lattice rp_srtio3 ; \

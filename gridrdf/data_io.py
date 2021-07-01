@@ -1,3 +1,5 @@
+""" Read previously generated RDF or GRID data.
+"""
 
 import numpy as np
 import gzip, tarfile

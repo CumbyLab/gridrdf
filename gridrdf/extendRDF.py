@@ -1,4 +1,10 @@
 '''
+Generate GRID (aka extended-RDF) from a pymatgen structure.
+
+Various functions to compute pairwise atomic distances and bin
+them into histograms, with optional Gaussian broadening.
+
+
 The __name__ == '__main__' part in this module is used for test runs, 
 so the input_file should contain a single structure
 Batch calculation of the whole dataset, i.e. multiple input structures is done in the

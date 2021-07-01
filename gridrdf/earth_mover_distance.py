@@ -1,3 +1,14 @@
+"""
+Module to compute earth mover's distance (EMD) for different inputs.
+
+Allows EMD comparison between the following features:
+- Composition (as normalised vector)
+- GRID histograms (mean of pairwise comparisons)
+- RDF
+
+The module also includes helper functions to compute dissimilarity matrices
+between multiple input pairs, for later ML.
+"""
 
 import sys
 import os

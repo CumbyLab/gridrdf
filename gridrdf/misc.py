@@ -1,4 +1,5 @@
-
+""" Miscellaneous utility functions.
+"""
 
 def int_or_str(value):
     '''
