@@ -39,13 +39,13 @@ the procedure is as follows:
    ``` python
    gridrdf.data_explore.batch_rdf(data,
                                   max_dist = 10,
-								  bin_size = 0.1,
-								  method='kde',
-								  output_dir = './GRIDS/',
-								  normalize = True,
-								  )					  
+                                  bin_size = 0.1,
+                                  method='kde',
+                                  output_dir = './GRIDS/',
+                                  normalize = True,
+                                  )
    ```
-   or 
+   or from a terminal:
    ```
    python data_explore.py --input_file MP_modulus.json --rdf_dir ./GRIDS/ --task extend_rdf_kde
    ```
@@ -58,17 +58,21 @@ the procedure is as follows:
    with open('MP_subset.json', 'w') as f:
        json.dump(data, f, indent=1)
    ```   
-   or
+   or from a terminal:
    ```
    python data_prepare.py --input_file MP_modulus.json --rdf_dir ./GRIDS/ --output_file MP_subset.json --task subset_rdf_len
    ```
+    
+	*****************************************************
 	** HOW WERE DATA FILTERED BY MODULUS and ELEMENTS? **
+	*****************************************************
+	
 4. Calculate pair-wise dissimilarity matrix between structures using EMD (time-consuming)
    ```
    similarity = gridrdf.earth_mover_distance.rdf_similarity_matrix(data, all_GRID, method='emd')
    similarity.to_csv('GRID_sim_whole_matrix.csv')
    ```
-   or
+   or from a terminal:
    ```
    python earth_mover_distance.py --input_file MP_modulus.json --rdf_dir ./GRIDS/ --output_file GRID_sim --task rdf_similarity_matrix
    ```
@@ -79,12 +83,12 @@ the procedure is as follows:
    model = sklearn.neighbors.KNeighborsRegressor(n_neighbors=1, metric='precomputed')
    gridrdf.train.calc_obs_vs_pred_2D(funct = model,
                                      X_data = similarity,
-									 y_data = K_data,
-									 test_size = 0.2,
+                                     y_data = K_data,
+                                     test_size = 0.2,
                                      outdir= './',
-									 )
+                                    )
    ```
-   or
+   or from a terminal:
    ```
    python train.py --input_file MP_modulus.json --rdf_dir ./GRIDS/ --input_features distance_matrix --dist_matrix GRID_sim_whole_matrix.csv --out_dir ./ --funct knn_reg --target bulk_modulus --metrics emd --task obs_vs_pred
    ```
