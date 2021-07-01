@@ -4,6 +4,7 @@ Other types of RDF as benchmark to the extend RDF
 
 
 import numpy as np
+import os
 from pymatgen import Structure
 try:
     from matminer.featurizers.structure import RadialDistributionFunction
@@ -12,7 +13,7 @@ except:
     print('matminer is not installed, cannot calculate original RDF')
 
 
-def origin_rdf_histo(data, max_dist=10, bin_size=0.1):
+def origin_rdf_histo(data, max_dist=10, bin_size=0.1, outdir='./'):
     '''
     Calcualte the vanilla RDF using matminer.  
     BEWARE! In the implementation of RDF in matminer, the endpoint
@@ -29,7 +30,7 @@ def origin_rdf_histo(data, max_dist=10, bin_size=0.1):
     for d in data:
         struct = Structure.from_str(d['cif'], fmt='cif')
         rdf_bin = rdf_fn.featurize(struct)[0]['distribution']
-        outfile = d['task_id']
+        outfile = os.path.normpath(os.path.join(outdir, d['task_id']))
         np.savetxt(outfile, rdf_bin, delimiter=' ', fmt='%.3f')
     return
 

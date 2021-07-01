@@ -283,6 +283,9 @@ def nn_bulk_modulus_matrix_add(data, nn=1, simi_dir = '.', simi_matrix=['extende
         compos_emd = compos_emd.fillna(0).add(compos_emd.transpose().fillna(0))
         total_emd = total_emd.add(compos_emd)
 
+    if total_emd.isna().all().sum() > 0:
+        raise IndexError('data file is a different size to distance matrix')
+
     pred_k = pd.DataFrame(index=df_mp.index,
                         columns=['ground_truth', 'predict_bulk_modulus', 
                                     'smallest_emd', 'nearest_neighbor'])
@@ -298,6 +301,7 @@ def nn_bulk_modulus_matrix_add(data, nn=1, simi_dir = '.', simi_matrix=['extende
         pred_k.loc[baseline_id]['ground_truth'] = df_mp['elasticity.K_VRH'][baseline_id]
         pred_k.loc[baseline_id]['smallest_emd'] = nn_mps.values[0]
         pred_k.loc[baseline_id]['nearest_neighbor'] = nn_mps.index.values[0]
+        
 
     return pred_k
 
@@ -508,7 +512,7 @@ def rdf_similarity_matrix(data, all_rdf, indice=None, method='emd'):
         for multiple shells rdf the distance is the mean value of all shells
     '''
     # used for wasserstein distance
-    emd_bins = np.linspace(0, 10, 101)
+    emd_bins = np.linspace(0, 10, 100)
 
     # if indice is None, then loop over the whole dataset
     if not indice:
@@ -517,7 +521,7 @@ def rdf_similarity_matrix(data, all_rdf, indice=None, method='emd'):
     if len(all_rdf[0].shape) == 2:
         # typically for extend RDF
         df = pd.DataFrame([])
-        for i1 in range(indice[0], indice[1]):
+        for i1 in tqdm(range(indice[0], indice[1]), desc='similarity matrix rows', mininterval=10):
             d1 = data[i1]
             for i2, d2 in enumerate(data):
                 if i1 <= i2:
@@ -535,7 +539,7 @@ def rdf_similarity_matrix(data, all_rdf, indice=None, method='emd'):
     elif len(all_rdf[0].shape) == 1:
         # typically for vanilla RDF and other 1D input
         df = pd.DataFrame([])
-        for i1 in range(indice[0], indice[1]):
+        for i1 in tqdm(range(indice[0], indice[1]), desc='similarity matrix rows', mininterval=10):
             d1 = data[i1]
             for i2, d2 in enumerate(data):
                 if i1 <= i2:

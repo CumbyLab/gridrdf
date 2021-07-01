@@ -9,6 +9,7 @@ from pymatgen import Structure
 from sklearn.kernel_ridge import KernelRidge
 from sklearn.linear_model import Lasso, ElasticNet
 from sklearn.svm import SVR, SVC
+from sklearn.neighbors import KNeighborsRegressor
 from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
 from sklearn.model_selection import train_test_split, learning_curve, GridSearchCV
 from sklearn.pipeline import Pipeline
@@ -23,6 +24,48 @@ from extendRDF import shell_similarity
 from data_io import rdf_read, shell_similarity_read
 from misc import int_or_str
 
+
+def train_test_split_2D(X_data, y_data, test_size, random_state=1):
+    """ Modified version of train_test_split designed to split a square nxn matrix correctly. """
+    
+    print('Using 2D split')
+    # Turn things (back?) into a DataFrame so we retain the indices
+    full_X = pd.DataFrame(X_data)
+    full_y = pd.DataFrame(y_data)
+    
+    X_train, X_test, y_train, y_test = \
+        train_test_split_old(full_X, full_y, test_size=test_size, random_state=1) 
+        
+    X_train = X_train.reindex(X_train.index, axis=1).to_numpy()
+    X_test = X_test.drop(X_test.index, axis=1).to_numpy()
+    
+    # If only one training column, we need to call to_numpy differently
+    # to avoid including indices in the output
+    if y_train.shape[1] > 1:
+        y_train = y_train.to_numpy()
+        y_test = y_test.to_numpy()
+    else:
+        y_train = y_train[0].to_numpy()
+        y_test = y_test[0].to_numpy()
+
+    return X_train, X_test, y_train, y_test
+    
+def calc_obs_vs_pred_2D(funct, X_data, y_data, test_size, outdir='./'):
+    '''
+    The observation vs prediction plot for 2D X data (e.g. similarity matrix)
+    '''
+    X_train, X_test, y_train, y_test = \
+            train_test_split_2D(X_data, y_data, test_size=test_size, random_state=1)
+    funct.fit(X_train, y_train)
+    y_pred = funct.predict(X_test)
+    y_pred_train = funct.predict(X_train)
+    
+    np.savetxt(os.path.normpath(os.path.join(outdir, 'test.' + str(test_size))), 
+                np.stack([y_test, y_pred]).transpose(), 
+                delimiter=' ', fmt='%.3f')
+    np.savetxt(os.path.normpath(os.path.join(outdir, 'train.' + str(test_size))), 
+                np.stack([y_train, y_pred_train]).transpose(), 
+                delimiter=' ', fmt='%.3f')
 
 def krr_grid_search(alpha, gamma, X_data, y_data, test_size=0.2):
     kr = GridSearchCV( KernelRidge(),
@@ -49,8 +92,13 @@ def svr_grid_search(gamma, C, X_data, y_data, test_size=0.2):
 
 
 def calc_learning_curve(funct, X_data, y_data, test_size=0.2):
+
+    print('Splitting data ... ', end='')
     X_train, X_test, y_train, y_test = \
         train_test_split(X_data, y_data, test_size=test_size, random_state=1)
+        
+    print('Done')
+    print('Training learning curve ... ', end='')
     pipe = Pipeline([ #('scl', StandardScaler()),
                 ('krr', funct), ])
     train_sizes, train_scores, test_scores = \
@@ -59,6 +107,9 @@ def calc_learning_curve(funct, X_data, y_data, test_size=0.2):
                         scoring='neg_mean_absolute_error',
                         cv=10, n_jobs=1)
 
+    print('Done')
+    print(train_sizes, train_scores, test_scores)
+
     train_mean = np.mean(train_scores, axis=1)
     train_std = np.std(train_scores, axis=1)
     test_mean = np.mean(test_scores, axis=1)
@@ -66,7 +117,8 @@ def calc_learning_curve(funct, X_data, y_data, test_size=0.2):
 
     learning_curve_results = np.stack([ train_mean, train_std, test_mean, test_std ])
     learning_curve_results = learning_curve_results.transpose()
-    np.savetxt('../learning_curve', learning_curve_results, delimiter=' ', fmt='%.3f')
+    print(learning_curve_results.shape)
+    np.savetxt(os.path.normpath(os.path.join(output_dir, 'learning_curve')), learning_curve_results, delimiter=' ', fmt='%.3f')
 
 
 def emd_of_two_compositions(y_test, y_pred, pettifor_index=True):
@@ -149,7 +201,11 @@ if __name__ == '__main__':
                             '   lattice_matrix: a 3x3 matrix of lattice \n' +
                             '   formula:  \n' +
                             '   composition:  \n' +
+                            '   distance_matrix: precomputed pair-wise distances (e.g. EMD) \n' +
                             ' '
+                        )
+    parser.add_argument('--output_dir', type=str, default = './',
+                        help='directory to put output files'
                         )
     parser.add_argument('--funct', type=str, default='krr',
                         help='which function is used, currently support: \n' +
@@ -157,7 +213,8 @@ if __name__ == '__main__':
                             '   svm(Support Vector Machine) \n' +
                             '   rf(random forest) \n' +
                             '   lasso: linear model with L1 regulation \n' +
-                            '   elastic_net: both L1 and L2 regulation are used'
+                            '   elastic_net: both L1 and L2 regulation are used \n' + 
+                            '   knn_reg: KNeighborsRegressor'
                         )
     parser.add_argument('--target', type=str, default='bulk_modulus',
                         help='which properteis as target, currently support: \n' +
@@ -178,7 +235,11 @@ if __name__ == '__main__':
                             '   ave_bond_std:  \n' +
                             '   coord_num_std:  \n' +
                             '   num_sg_operation:  \n' +
-                            '   number_of_species: number of atomic species of the compound '
+                            '   number_of_species: number of atomic species of the compound \n' +
+                            '   band_gap: band gap data contained in input_file (i.e. from materials project)'
+                        )
+    parser.add_argument('--log_target', type=bool, default=False, 
+                        help='whether to take log of target before fitting (default False)'
                         )
     parser.add_argument('--task', type=str, default='test_size_depend',
                         help='one of the following: \n'+
@@ -190,7 +251,7 @@ if __name__ == '__main__':
                             '   randon_guess: difference between ground truth and random guess/constant \n' +
                             '   emd_visual:  \n' +
                             '   learning_curve: the calculated learning curve will be stored \n' +
-                            '       in ../learning_curve'
+                            '       in output_dir/learning_curve'
                         )
     parser.add_argument('--metrics', type=str, default='default',
                         help='which metrics is used, currently support: \n' +
@@ -205,7 +266,12 @@ if __name__ == '__main__':
                             '   none: no trim, suitable for origin RDF  \n' +
                             '   or an integer number'
                         )
-
+    parser.add_argument('--dist_matrix', type=str, default=None,
+                        help = 'file containing pre-computed pairwise distances to use \n' +
+                               'instead of Sklearn distance metric (e.g. EMD)'
+                        )
+                        
+                        
     args = parser.parse_args()
     rdf_dir = args.rdf_dir
     input_file = args.input_file
@@ -215,10 +281,18 @@ if __name__ == '__main__':
     task = args.task
     trim = int_or_str(args.trim)
     input_features = args.input_features.split()
+    dist_matrix = args.dist_matrix
+    output_dir = args.output_dir
+    
+    
+
+    print('Reading data input ... ', end=''),
 
     # read the dataset from input file
     with open (input_file,'r') as f:
         data = json.load(f)
+        
+    print('Done')
 
     # the following input features are prepared
     # if the task is to give randon guess (for comparsion with prediction)
@@ -229,7 +303,8 @@ if __name__ == '__main__':
             'extended_rdf', 'shell_similarity', 
             'fourier_space', 
             'lattice_abc', 'lattice_matrix',
-            'formula', 'composition'
+            'formula', 'composition',
+            'distance_matrix',
         ]
         if not set(input_features).issubset(all_features):
             print('Wrong feature append argument')
@@ -268,9 +343,19 @@ if __name__ == '__main__':
                 X_data = all_lattice
             else:
                 X_data = np.hstack((X_data, all_lattice))
+        if 'distance_matrix' in input_features:
+            assert(dist_matrix is not None)
+            # Change to 2D version of train_test_split (also in sub-packages)
+            train_test_split_old = train_test_split
+            train_test_split = train_test_split_2D
+            
+            calc_obs_vs_pred = calc_obs_vs_pred_2D
+            print('Reading distance matrix ... ', end=''),
+            X_data = pd.read_csv(dist_matrix, index_col=0)
+            print('Done')
         
     # the following line save X_data for check, but this is rarely used
-    # np.savetxt('../X_data', X_data, delimiter=' ',fmt='%.3f')
+    #np.savetxt(os.path.join(output_dir, 'X_data'), X_data, delimiter=' ',fmt='%.3f')
 
     # target_type can be continuous categorical ordinal
     # or multi-cont, multi-cate, multi-ord
@@ -280,11 +365,13 @@ if __name__ == '__main__':
     if target == 'bulk_modulus':
         target_type = 'continuous'
         y_data = np.array([ x['elasticity.K_VRH'] for x in data ])
-        y_data = np.log10(y_data)
+        if args.log_target:
+            y_data = np.log10(y_data)
     elif target == 'shear_modulus':
         target_type = 'continuous'
         y_data = np.array([ x['elasticity.G_VRH'] for x in data ])
-        y_data = np.log10(y_data)
+        if args.log_target:
+            y_data = np.log10(y_data)
     elif target == 'density':
         target_type = 'continuous'
         y_data = np.array([ Structure.from_str(x['cif'], fmt='cif').density 
@@ -331,7 +418,8 @@ if __name__ == '__main__':
     elif target == 'bond_length_std':
         target_type = 'continuous'
         y_data = np.array([ x['bond_length_std'] for x in data ])
-        y_data = np.log10(y_data + 1)
+        if args.log_target:
+            y_data = np.log10(y_data + 1)
     elif target == 'ave_bond_std':
         target_type = 'continuous'
         y_data = np.array([ x['ave_bond_std'] for x in data ])
@@ -341,10 +429,15 @@ if __name__ == '__main__':
     elif target == 'num_sg_operation':
         target_type = 'continuous'
         y_data = np.array([ x['num_sg_operation'] for x in data ])
+    elif target == 'band_gap':
+        assert 'band_gap' in data[0].keys()
+        target_type = 'continuous'
+        y_data = np.array([ x['band_gap'] for x in data ])
     else:
         print('This target is not support, please check help')
         exit()
 
+    print('Setting up algorithm ... ', end='')
     # select the machine learning algorithm
     if funct_name == 'krr':
         funct = KernelRidge(alpha=1.0)
@@ -362,12 +455,19 @@ if __name__ == '__main__':
             funct = RandomForestClassifier(max_depth=2, random_state=0)
         else:
             funct = RandomForestRegressor(max_depth=2, random_state=0)
+    elif funct_name == 'knn_reg':
+        if dist_matrix is None:
+            print('knn requires a pre-computed distance matrix')
+            exit()
+        funct = KNeighborsRegressor(n_neighbors=1, metric='precomputed')
     else:
-        print('this algorithm is not support, please check help')
+        print('this algorithm is not supported, please check help')
         exit()
 
+    print('Done')
+
     # use a 80/20 split except otherwise stated, e.g. in varying test_size
-    test_size = 0.2
+    test_size = 0.05
     if task == 'test_size_depend':
         for test_size in np.linspace(0.9, 0.1, 9):
             X_train, X_test, y_train, y_test = \
@@ -433,7 +533,7 @@ if __name__ == '__main__':
     
     elif task == 'obs_vs_pred':
         calc_obs_vs_pred(funct=funct, X_data=X_data, y_data=y_data, test_size=test_size,
-                        outdir='../'+target+'_')
+                        outdir= output_dir)
     
     elif task == 'confusion_matrix':
         if target_type == 'multi-cate':
@@ -448,7 +548,7 @@ if __name__ == '__main__':
             # The output is reshaped into a 'number of types of lables' by 4 
             # in the order of true-positive false-positive false-negative true-negative
             cm = metrics.multilabel_confusion_matrix(y_test, y_bin)
-            np.savetxt('../confusion_matrix_' + str(round(test_size,3)), 
+            np.savetxt(os.path.normpath(os.path.join(output_dir, 'confusion_matrix_' + str(round(test_size,3)))), 
                         cm.reshape(len(y_pred[0]), 4), delimiter=' ', fmt='%.3f')
         elif target_type == 'categorical' and target == 'type_of_elements':
             # now only implemented for type of elements
@@ -460,7 +560,7 @@ if __name__ == '__main__':
             y_pred[np.where(y_pred > 5)] = 5
             y_pred = list(map(str, list(np.int64(y_pred + 0.5))))
             cm = metrics.confusion_matrix(y_test, y_pred, labels=classes)
-            np.savetxt('../confusion_matrix_multiclass', cm, delimiter=' ', fmt='%.3f')
+            np.savetxt(os.path.normpath(os.path.join(output_dir, 'confusion_matrix_multiclass'), cm, delimiter=' ', fmt='%.3f'))
         else:
             print('This target does not support confusion matrix')
     
@@ -477,7 +577,9 @@ if __name__ == '__main__':
             print('best score {} ; best parameter {}'.format(best_score, best_params))
     
     elif task == 'learning_curve':
+        print('starting learning curve')
         calc_learning_curve(funct=funct, X_data=X_data, y_data=y_data, test_size=test_size)
+        print('Done')
 
     elif task == 'random_guess':
         if target == 'number_of_species':
@@ -511,16 +613,16 @@ if __name__ == '__main__':
         for threshold in np.linspace(0.2, 0.6, 5):
             y_bin = binarize_output(y_test, y_pred, threshold=threshold, save_to_file=False)
             pred_acc = emd_of_two_compositions(y_test, y_bin)
-            np.savetxt('../dist_histo_' + str(threshold), pred_acc, delimiter=' ', fmt='%.3f')
+            np.savetxt(os.path.normpath(os.path.join(output_dir, 'dist_histo_' + str(threshold))), pred_acc, delimiter=' ', fmt='%.3f')
             print(pred_acc.mean())
             
             large_samples, middle_samples, small_samples = \
                     n_best_middle_worst(y_test, y_bin, metrics_values=pred_acc, n_visual=100)
-            np.savetxt('../large_sample_' + str(threshold), large_samples,
+            np.savetxt(os.path.normpath(os.path.join(output_dir, 'large_sample_' + str(threshold))), large_samples,
                         delimiter=' ', fmt='%.3f')
-            np.savetxt('../middle_sample_' + str(threshold), middle_samples, 
+            np.savetxt(os.path.normpath(os.path.join(output_dir, 'middle_sample_' + str(threshold))), middle_samples, 
                         delimiter=' ', fmt='%.3f')            
-            np.savetxt('../small_sample_' + str(threshold), small_samples, 
+            np.savetxt(os.path.normpath(os.path.join(output_dir, 'small_sample_' + str(threshold))), small_samples, 
                         delimiter=' ', fmt='%.3f')
 
     else:
