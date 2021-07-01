@@ -17,7 +17,7 @@ __all__ = ['composition',
            'otherModels',
            'otherRDFs',
            'train',
-           'visualisation',
+           'visualization',
            ]
            
            
@@ -29,4 +29,4 @@ import gridrdf.earth_mover_distance
 import gridrdf.extendRDF
 import gridrdf.otherRDFs
 import gridrdf.train
-import gridrdf.visualisation
+import gridrdf.visualization

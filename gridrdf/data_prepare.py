@@ -22,8 +22,8 @@ import pandas as pd
 from collections import Counter
 from pymatgen import Structure, Lattice, MPRester
 
-from composition import elements_selection
-from data_io import rdf_read
+from .composition import elements_selection
+from .data_io import rdf_read
 
 
 def nacl():

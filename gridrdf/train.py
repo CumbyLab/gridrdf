@@ -22,12 +22,12 @@ from sklearn.preprocessing import StandardScaler
 from sklearn import metrics
 from pyemd import emd
 
-from data_explore import rdf_trim, rdf_flatten, batch_shell_similarity, batch_lattice
-from composition import composition_one_hot, bonding_matrix
-from visualization import calc_obs_vs_pred, binarize_output, n_best_middle_worst
-from extendRDF import shell_similarity
-from data_io import rdf_read, shell_similarity_read
-from misc import int_or_str
+from .data_explore import rdf_trim, rdf_flatten, batch_shell_similarity, batch_lattice
+from .composition import composition_one_hot, bonding_matrix
+from .visualization import calc_obs_vs_pred, binarize_output, n_best_middle_worst
+from .extendRDF import shell_similarity
+from .data_io import rdf_read, shell_similarity_read
+from .misc import int_or_str
 
 
 def train_test_split_2D(X_data, y_data, test_size, random_state=1):

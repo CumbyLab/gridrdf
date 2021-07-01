@@ -20,9 +20,9 @@ try:
 except:
     print('matminer is not installed, cannot calculate structural complexity')
 
-from extendRDF import rdf_histo, rdf_kde, get_rdf_and_atoms, shell_similarity
-from composition import elements_count, bonding_type
-from otherRDFs import origin_rdf_histo
+from .extendRDF import rdf_histo, rdf_kde, get_rdf_and_atoms, shell_similarity
+from .composition import elements_count, bonding_type
+from .otherRDFs import origin_rdf_histo
 
 
 def batch_rdf(data,
