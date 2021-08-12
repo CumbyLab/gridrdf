@@ -130,8 +130,8 @@ def calc_learning_curve(funct, X_data, y_data, test_size=0.1, procs=1, output_di
     # Give 46 GPa:
     #orders = np.hstack([np.arange(50, len(X_data)), np.arange(50)])
     
-    if funct.metric == 'precomputed':
-        # We are using a distance matrix - keep row-column correspondence
+    if isinstance(funct, KNeighborsRegressor):
+        # Assume we are using a distance matrix - keep row-column correspondence
         X_ = X_data[orders][:, orders]
     else:
         X_ = X_data[orders]
