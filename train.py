@@ -11,7 +11,8 @@ from sklearn.linear_model import Lasso, ElasticNet
 from sklearn.svm import SVR, SVC
 from sklearn.neighbors import KNeighborsRegressor
 from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
-from sklearn.model_selection import train_test_split, learning_curve, GridSearchCV
+from sklearn.model_selection import learning_curve, GridSearchCV
+import sklearn.model_selection
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn import metrics
@@ -24,6 +25,8 @@ from extendRDF import shell_similarity
 from data_io import rdf_read, rdf_read_parallel, shell_similarity_read
 from misc import int_or_str
 
+# Manually create 'train_test_split' so it can be changed to 2D version if needed.
+train_test_split = sklearn.model_selection.train_test_split
 
 def train_test_split_2D(X_data, y_data, test_size, random_state=1):
     """ Modified version of train_test_split designed to split a square nxn matrix correctly. """
@@ -34,10 +37,24 @@ def train_test_split_2D(X_data, y_data, test_size, random_state=1):
     full_y = pd.DataFrame(y_data)
     
     X_train, X_test, y_train, y_test = \
-        train_test_split_old(full_X, full_y, test_size=test_size, random_state=1) 
+        sklearn.model_selection.train_test_split(full_X, full_y, test_size=test_size, random_state=random_state, shuffle=True)
+    
+    print(X_test.index)
+     
+    # Check we aren't leaking anything
+    assert len(X_train.index.intersection(X_test.index)) == 0
+    assert len(y_train.index.intersection(y_test.index)) == 0
+        
+    assert len(X_train.index.intersection(X_train.columns)) == len(X_train)
+    assert len(X_test.index.intersection(X_test.columns)) == len(X_test)
         
     X_train = X_train.reindex(X_train.index, axis=1).to_numpy()
-    X_test = X_test.drop(X_test.index, axis=1).to_numpy()
+    X_test = X_test.reindex(X_test.index, axis=1).to_numpy()
+    
+    # Check we still have zero diagonals for distance
+    assert (X_train.diagonal() == 0).all()
+    assert (X_test.diagonal() == 0).all()
+    
     
     # If only one training column, we need to call to_numpy differently
     # to avoid including indices in the output
@@ -91,19 +108,43 @@ def svr_grid_search(gamma, C, X_data, y_data, test_size=0.2):
     return svr.best_score_ , svr.best_params_ #, svr.cv_results_
 
 
-def calc_learning_curve(funct, X_data, y_data, test_size=0.1, procs=1):
+def calc_learning_curve(funct, X_data, y_data, test_size=0.1, procs=1, output_dir = '.'):
     #X_train, X_test, y_train, y_test = \
-    #    train_test_split(X_data, y_data, test_size=test_size, random_state=1)
-    #pipe = Pipeline([ #('scl', StandardScaler()),
-    #            ('krr', funct), ])
+    #    train_test_split_2D(X_data, y_data, test_size=2, random_state=None)
+        
+    ##########
+    #
+    # If the data are passed straight to learning_curve, the MAE ends up
+    # twice as big as if the data are permuted first (aking 2D correspondence into
+    # account if a distance matrix is supplied). As such, we permute the data first
+    #
+    # This *probably* occurs because learning_curve performs the splitting for 
+    # k-fold validation before 'shuffling' the data. In this case, I expect that
+    # some folds end up with very similar data and some with very dissimilar data
+    # (intuitive if MP IDs increase with increasing complexity over time).
+    
+    # Gives 20GPa:
+    orders = np.random.permutation(np.arange(len(X_data)))
+    # Gives 47 GPa:
+    #orders = np.arange(len(X_data))
+    # Give 46 GPa:
+    #orders = np.hstack([np.arange(50, len(X_data)), np.arange(50)])
+    
+    if funct.metric == 'precomputed':
+        # We are using a distance matrix - keep row-column correspondence
+        X_ = X_data[orders][:, orders]
+    else:
+        X_ = X_data[orders]
+    y_ = y_data[orders]
 
     train_sizes, train_scores, test_scores = \
-        learning_curve(estimator=funct, X=X_data, y=y_data, 
+        learning_curve(estimator=funct, X=X_, y=y_, 
                         train_sizes=np.linspace(0.1, 1.0, 10),
                         #train_sizes = np.arange(0.1, 1+test_size - 0.01, test_size),
                         scoring='neg_mean_absolute_error',
                         shuffle=True,
-                        cv=5, n_jobs=procs)
+                        verbose=0,
+                        cv=5, n_jobs=procs) 
 
     print("Training scores:")
     print(train_scores)
@@ -308,7 +349,7 @@ if __name__ == '__main__':
             'distance_matrix',
         ]
         if not set(input_features).issubset(all_features):
-            print('Wrong feature append argument')
+            raise ValueError('Specified feature(s) are not available')
 
         X_data = None
         if 'extended_rdf' in input_features:
@@ -359,11 +400,16 @@ if __name__ == '__main__':
             calc_obs_vs_pred = calc_obs_vs_pred_2D
             print('Reading distance matrix ... ', end=''),
             X_data = pd.read_csv(dist_matrix, index_col=0)
+            
+            # Check that distance matrix matches data file for MP-ID
+            assert len(X_data.index.intersection( [d['task_id'] for d in data] )) == len(X_data)
             print('Done')
+            # Finally, throw away dataFrame indices
+            X_data = X_data.to_numpy()
         
     # the following line save X_data for check, but this is rarely used
     #np.savetxt(os.path.join(output_dir, 'X_data'), X_data, delimiter=' ',fmt='%.3f')
-
+    print("Shape of input feature array: ", X_data.shape)
     # target_type can be continuous categorical ordinal
     # or multi-cont, multi-cate, multi-ord
     target_type = None
@@ -445,7 +491,7 @@ if __name__ == '__main__':
         print('This target is not support, please check help')
         exit()
 
-    print('Setting up algorithm ... ', end='')
+    print('Setting up model ... ', end='')
     # select the machine learning algorithm
     if funct_name == 'krr':
         funct = KernelRidge(alpha=1.0)
@@ -467,15 +513,15 @@ if __name__ == '__main__':
         if dist_matrix is None:
             print('knn requires a pre-computed distance matrix')
             exit()
-        funct = KNeighborsRegressor(n_neighbors=1, metric='precomputed')
+        funct = KNeighborsRegressor(n_neighbors=1, metric='precomputed', weights='distance')
     else:
         print('this algorithm is not supported, please check help')
         exit()
 
-    print('Done')
+    print('Done. Using model ', funct.__class__)
 
     # use a 80/20 split except otherwise stated, e.g. in varying test_size
-    test_size = 0.05
+    test_size = 0.2
     if task == 'test_size_depend':
         for test_size in np.linspace(0.9, 0.1, 9):
             X_train, X_test, y_train, y_test = \
