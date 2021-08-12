@@ -21,7 +21,7 @@ from data_explore import rdf_trim, rdf_flatten, batch_shell_similarity, batch_la
 from composition import composition_one_hot, bonding_matrix
 from visualization import calc_obs_vs_pred, binarize_output, n_best_middle_worst
 from extendRDF import shell_similarity
-from data_io import rdf_read, shell_similarity_read
+from data_io import rdf_read, rdf_read_parallel, shell_similarity_read
 from misc import int_or_str
 
 
@@ -91,35 +91,39 @@ def svr_grid_search(gamma, C, X_data, y_data, test_size=0.2):
     return svr.best_score_ , svr.best_params_ #, svr.cv_results_
 
 
-def calc_learning_curve(funct, X_data, y_data, test_size=0.2):
+def calc_learning_curve(funct, X_data, y_data, test_size=0.1, procs=1):
+    #X_train, X_test, y_train, y_test = \
+    #    train_test_split(X_data, y_data, test_size=test_size, random_state=1)
+    #pipe = Pipeline([ #('scl', StandardScaler()),
+    #            ('krr', funct), ])
 
-    print('Splitting data ... ', end='')
-    X_train, X_test, y_train, y_test = \
-        train_test_split(X_data, y_data, test_size=test_size, random_state=1)
-        
-    print('Done')
-    print('Training learning curve ... ', end='')
-    pipe = Pipeline([ #('scl', StandardScaler()),
-                ('krr', funct), ])
     train_sizes, train_scores, test_scores = \
-        learning_curve(estimator=pipe, X=X_train, y=y_train, 
+        learning_curve(estimator=funct, X=X_data, y=y_data, 
                         train_sizes=np.linspace(0.1, 1.0, 10),
+                        #train_sizes = np.arange(0.1, 1+test_size - 0.01, test_size),
                         scoring='neg_mean_absolute_error',
-                        cv=10, n_jobs=1)
+                        shuffle=True,
+                        cv=5, n_jobs=procs)
 
-    print('Done')
-    print(train_sizes, train_scores, test_scores)
-
-    train_mean = np.mean(train_scores, axis=1)
+    print("Training scores:")
+    print(train_scores)
+    print("Testing scores")
+    print(test_scores)
+                        
+    train_mean = np.mean(train_scores, axis=1) *-1
     train_std = np.std(train_scores, axis=1)
-    test_mean = np.mean(test_scores, axis=1)
+    test_mean = np.mean(test_scores, axis=1) * -1
     test_std = np.std(test_scores, axis=1)
 
     learning_curve_results = np.stack([ train_mean, train_std, test_mean, test_std ])
     learning_curve_results = learning_curve_results.transpose()
-    print(learning_curve_results.shape)
+
     np.savetxt(os.path.normpath(os.path.join(output_dir, 'learning_curve')), learning_curve_results, delimiter=' ', fmt='%.3f')
 
+    print("{:11s} {:11s} {:11s} {:11s} {:11s}".format("Train size", "<Train>", "std(Train)", "<Test>", "std(Test)"))
+    for i, result in enumerate(learning_curve_results):
+        print('{0:11d} {1:10.3f} {2:10.3f} {3:10.3f} {4:10.3f}'.format(train_sizes[i], *result))
+    
 
 def emd_of_two_compositions(y_test, y_pred, pettifor_index=True):
     '''
@@ -199,7 +203,7 @@ if __name__ == '__main__':
                             '   fourier_space:  \n' +
                             '   lattice_abc: a, b, c, alpha, beta, gamma \n' +
                             '   lattice_matrix: a 3x3 matrix of lattice \n' +
-                            '   formula:  \n' +
+                            '   formula:  \n' + 
                             '   composition:  \n' +
                             '   distance_matrix: precomputed pair-wise distances (e.g. EMD) \n' +
                             ' '
@@ -269,9 +273,11 @@ if __name__ == '__main__':
     parser.add_argument('--dist_matrix', type=str, default=None,
                         help = 'file containing pre-computed pairwise distances to use \n' +
                                'instead of Sklearn distance metric (e.g. EMD)'
+                        )              
+    parser.add_argument('--procs', type=int, default=1,
+                        help='The number of processes to parallelise over, where implemented (default 1)'
                         )
-                        
-                        
+
     args = parser.parse_args()
     rdf_dir = args.rdf_dir
     input_file = args.input_file
@@ -283,10 +289,7 @@ if __name__ == '__main__':
     input_features = args.input_features.split()
     dist_matrix = args.dist_matrix
     output_dir = args.output_dir
-    
-    
-
-    print('Reading data input ... ', end=''),
+    procs = args.procs
 
     # read the dataset from input file
     with open (input_file,'r') as f:
@@ -314,7 +317,10 @@ if __name__ == '__main__':
             if 'tar' in rdf_dir:
                 all_rdf = rdf_read_tar(data, rdf_dir)
             else:
-                all_rdf = rdf_read(data, rdf_dir)
+                if procs > 1:
+                    all_rdf = rdf_read_parallel(data, rdf_dir, procs=procs)
+                else:
+                    all_rdf = rdf_read(data, rdf_dir)
         
             # make all the rdf same length for machine learning input
             all_rdf = rdf_trim(all_rdf, trim=trim)
@@ -326,7 +332,10 @@ if __name__ == '__main__':
             else: 
                 X_data = np.hstack((X_data, all_shell_simi))
         if 'fourier_space' in input_features:
-            scatter_factors = rdf_read(data, '../fourier_space_0.1_normal/')
+            if procs == 1:
+                scatter_factors = rdf_read(data, '../fourier_space_0.1_normal/')
+            else:
+                scatter_factors = rdf_read_parallel(data, '../fourier_space_0.1_normal/', procs=procs)
             if X_data is None:
                 X_data = scatter_factors
             else: 
@@ -367,6 +376,7 @@ if __name__ == '__main__':
         y_data = np.array([ x['elasticity.K_VRH'] for x in data ])
         if args.log_target:
             y_data = np.log10(y_data)
+
     elif target == 'shear_modulus':
         target_type = 'continuous'
         y_data = np.array([ x['elasticity.G_VRH'] for x in data ])
@@ -477,7 +487,7 @@ if __name__ == '__main__':
             y_pred = funct.predict(X_test)
 
             if target_type == 'continuous':
-                if metrics_method == 'default' or metrics == 'mae':
+                if metrics_method == 'default' or metrics_method == 'mae':
                     pred_acc = metrics.mean_absolute_error(y_test, y_pred)
                 elif metrics_method == 'mape':
                     pred_acc = metrics.mean_absolute_percentage_error(y_test, y_pred)
@@ -577,9 +587,7 @@ if __name__ == '__main__':
             print('best score {} ; best parameter {}'.format(best_score, best_params))
     
     elif task == 'learning_curve':
-        print('starting learning curve')
-        calc_learning_curve(funct=funct, X_data=X_data, y_data=y_data, test_size=test_size)
-        print('Done')
+        calc_learning_curve(funct=funct, X_data=X_data, y_data=y_data, test_size=test_size, procs=procs)
 
     elif task == 'random_guess':
         if target == 'number_of_species':
