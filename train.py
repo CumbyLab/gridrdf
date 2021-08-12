@@ -294,8 +294,6 @@ if __name__ == '__main__':
     # read the dataset from input file
     with open (input_file,'r') as f:
         data = json.load(f)
-        
-    print('Done')
 
     # the following input features are prepared
     # if the task is to give randon guess (for comparsion with prediction)
