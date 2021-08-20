@@ -30,7 +30,7 @@ try:
 except:
     print('Element-EMD module not installed')
 
-from data_io import rdf_read
+from data_io import rdf_read, rdf_read_parallel
 from data_explore import rdf_trim, rdf_flatten
 from composition import composition_one_hot, element_indice
 from misc import int_or_str
@@ -756,6 +756,8 @@ if __name__ == '__main__':
                         help='only used for single rdf_similarity composition_similarity tasks')
     parser.add_argument('--data_indice', type=str, default=None,
                         help='start and end indice of the sub dataset')
+    parser.add_argument('-p', '--procs', type=int, default=None,
+                        help='Number of processors to parallelize over where implemented')
 
     args = parser.parse_args()
     input_file = args.input_file
@@ -763,6 +765,8 @@ if __name__ == '__main__':
     rdf_dir = args.rdf_dir
     task = args.task
     baseline_id = args.baseline_id
+    procs = args.procs
+    
     if isinstance(args.data_indice, str):
         indice = list(map(int, args.data_indice.split('_')))
     else:
@@ -772,13 +776,19 @@ if __name__ == '__main__':
         data = json.load(f)
 
     if task == 'rdf_similarity':
-        all_rdf = rdf_read(data, rdf_dir)
+        if procs is not None and procs > 1:
+            all_rdf = rdf_read_parallel(data, rdf_dir, procs=procs)
+        else:
+            all_rdf = rdf_read(data, rdf_dir)
         baseline_rdf = np.loadtxt(rdf_dir + '/' + baseline_id, delimiter=' ')
         rdf_emd = rdf_similarity(baseline_rdf, all_rdf)
         rdf_emd.to_csv(output_file + baseline_id + '_rdf_emd.csv')
 
     elif task == 'rdf_similarity_matrix':
-        all_rdf = rdf_read(data, rdf_dir)
+        if procs is not None and procs > 1:
+            all_rdf = rdf_read_parallel(data, rdf_dir, procs=procs)
+        else:
+            all_rdf = rdf_read(data, rdf_dir)
         # trim all the rdf to same length to save time
         rdf_len = 100
         all_rdf = rdf_trim(all_rdf, trim=rdf_len)
@@ -802,7 +812,10 @@ if __name__ == '__main__':
             compo_emd.to_csv(output_file + '_whole_matrix.csv')
 
     elif task == 'rdf_similarity_visualize':
-        all_rdf = rdf_read(data, rdf_dir)
+        if procs is not None and procs > 1:
+            all_rdf = rdf_read_parallel(data, rdf_dir, procs=procs)
+        else:
+            all_rdf = rdf_read(data, rdf_dir)
 
         for mode in ['rdf_shell_emd_path']:
             df = rdf_similarity_visualize(data, all_rdf, mode=mode)
@@ -814,7 +827,10 @@ if __name__ == '__main__':
             json.dump(match_list, f, indent=1)
 
     elif task == 'find_same_rdf':
-        all_rdf = rdf_read(data, rdf_dir)
+        if procs is not None and procs > 1:
+            all_rdf = rdf_read_parallel(data, rdf_dir, procs=procs)
+        else:
+            all_rdf = rdf_read(data, rdf_dir)
         all_rdf = rdf_trim(all_rdf)
         X_data = rdf_flatten(all_rdf)
         match_list = find_same_rdf(all_rdf,data)
