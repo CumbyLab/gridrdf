@@ -478,18 +478,18 @@ def rdf_similarity(baseline_rdf, all_rdf):
 
     if len(rdf_1.shape) == 2:
         dist_matrix = dist_matrix_1d(len(rdf_1[0]))
-        for rdf_2 in all_rdf:
+        for d, rdf_2 in enumerate(all_rdf):
             rdf_len = np.array([len(rdf_1), len(rdf_2)]).min()
             shell_distances = []
             for j in range(rdf_len):
                 shell_distances.append(wasserstein_distance(emd_bins, emd_bins, rdf_1[j], rdf_2[j]))
                 #shell_distances.append(emd(rdf_1[j], rdf_2[j], dist_matrix))
-            rdf_emd.loc[d['task_id']] = np.array(shell_distances).mean()
+            rdf_emd.loc[d] = np.array(shell_distances).mean()
 
     elif len(rdf_1.shape) == 1:
         dist_matrix = dist_matrix_1d(len(rdf_1))
-        for rdf_2 in all_rdf:
-            rdf_emd.loc[d['task_id']] = wasserstein_distance(emd_bins, emd_bins, rdf_1, rdf_2)
+        for d, rdf_2 in enumerate(all_rdf):
+            rdf_emd.loc[d] = wasserstein_distance(emd_bins, emd_bins, rdf_1, rdf_2)
             #rdf_emd.loc[d['task_id']] = emd(rdf_1, rdf_2, dist_matrix)
     
     return rdf_emd
@@ -512,7 +512,7 @@ def rdf_similarity_matrix(data, all_rdf, indice=None, method='emd'):
         for multiple shells rdf the distance is the mean value of all shells
     '''
     # used for wasserstein distance
-    emd_bins = np.linspace(0, 10, 100)
+    emd_bins = np.linspace(0, 10, 101)
 
     # if indice is None, then loop over the whole dataset
     if not indice:
@@ -528,8 +528,11 @@ def rdf_similarity_matrix(data, all_rdf, indice=None, method='emd'):
                     shell_distances = []
                     for j in range(len(all_rdf[0])):
                         if method == 'emd':
-                            shell_distances.append(wasserstein_distance(emd_bins, emd_bins, 
+                            try:
+                                shell_distances.append(wasserstein_distance(emd_bins, emd_bins, 
                                                                         all_rdf[i1][j], all_rdf[i2][j]))
+                            except ValueError:
+                                print('Error determining distance for {}; consider removing from analysis'.format(i1))
                         elif method == 'cosine':
                             shell_distances.append(spatial.distance.cosine(all_rdf[i1][j], all_rdf[i2][j]))
                         
