@@ -28,7 +28,7 @@ from .data_io import rdf_read
 
 def nacl():
     '''
-    Generate NaCl structure, ususlly for test purpose
+    Generate NaCl structure, usually for test purpose
 
     Args:
         None
@@ -82,24 +82,6 @@ def get_ICSD_CIFs_from_MP(APIkey):
                 properties=['task_id', 'icsd_ids', 'cif'])
     return d
 
-
-def remove_nan():
-    '''
-    Remove NAN data from v6 by create a new list
-    '''
-
-    with open('MP_modulus_v8.json', 'r') as f:
-        data = json.load(f)
-
-    new_data = []
-    for d in data:
-        if not math.isnan(d['ave_bond_std']):
-            new_data.append(d)
-
-    with open('MP_modulus_v9.json', 'w') as f:
-        json.dump(new_data, f, indent=1)
-
-
 def insert_field(infile1='num_shell', infile2='MP_modulus_all.json', 
                 outfile='MP_modulus_v4.json'):
     '''
@@ -150,7 +132,7 @@ def json_order():
     with open('pero3.json','w') as f:
         json.dump(d2,f,indent=1)
 
-def make_distorted_perovskite():
+def make_distorted_perovskite(outfile = None):
     '''
     used for testing purpose for EMD + extended RDF as a similarity measure
 
@@ -175,11 +157,13 @@ def make_distorted_perovskite():
         one_dict['cif'] = s.to(fmt='cif')
         all_dict.append(one_dict)
 
-    with open('pero_distortion.json','w') as f:
-        json.dump(all_dict, f, indent=1)
+    if outfile is not None:
+        with open(outfile,'w') as f:
+            json.dump(all_dict, f, indent=1)
 
+    return all_dict
 
-def perovskite_different_lattice():
+def perovskite_different_lattice(outfile=None):
     cif = "# generated using pymatgen\ndata_SrTiO3\n_symmetry_space_group_name_H-M   'P 1'\n_cell_length_a   3.94513000\n_cell_length_b   3.94513000\n_cell_length_c   3.94513000\n_cell_angle_alpha   90.00000000\n_cell_angle_beta   90.00000000\n_cell_angle_gamma   90.00000000\n_symmetry_Int_Tables_number   1\n_chemical_formula_structural   SrTiO3\n_chemical_formula_sum   'Sr1 Ti1 O3'\n_cell_volume   61.40220340\n_cell_formula_units_Z   1\nloop_\n _symmetry_equiv_pos_site_id\n _symmetry_equiv_pos_as_xyz\n  1  'x, y, z'\nloop_\n _atom_site_type_symbol\n _atom_site_label\n _atom_site_symmetry_multiplicity\n _atom_site_fract_x\n _atom_site_fract_y\n _atom_site_fract_z\n _atom_site_occupancy\n  Sr  Sr0  1  0.00000000  0.00000000  0.00000000  1\n  Ti  Ti1  1  0.50000000  0.50000000  0.50000000  1\n  O  O2  1  0.50000000  0.00000000  0.50000000  1\n  O  O3  1  0.50000000  0.50000000  0.00000000  1\n  O  O4  1  0.00000000  0.50000000  0.50000000  1\n"
     s = Structure.from_str(cif, fmt='cif')
 
@@ -192,8 +176,9 @@ def perovskite_different_lattice():
         one_dict['cif'] = s.to(fmt='cif')
         all_dict.append(one_dict)
 
-    with open('pero_lattice.json','w') as f:
-        json.dump(all_dict, f, indent=1)
+    if outfile is not None:
+        with open(outfile,'w') as f:
+            json.dump(all_dict, f, indent=1)
 
 
 if __name__ == '__main__':
