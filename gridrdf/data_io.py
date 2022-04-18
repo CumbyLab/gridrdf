@@ -22,16 +22,55 @@ def rdf_read(data, rdf_dir, zip_file=False):
     '''
     all_rdf = []
     for d in tqdm(data, desc='rdf read', mininterval=10):
-        rdf_file = os.path.normpath(os.path.join(rdf_dir, d['task_id']))
-        if zip_file:
-            with gzip.open(rdf_file + '.gz', 'r') as f:
-                rdf = np.loadtxt(f, delimiter=' ')
-        else:
-            rdf = np.loadtxt(rdf_file, delimiter=' ')
+        #rdf_file = os.path.normpath(os.path.join(rdf_dir, d['task_id']))
+        #if zip_file:
+        #    with gzip.open(rdf_file + '.gz', 'r') as f:
+        #        rdf = np.loadtxt(f, delimiter=' ')
+        #else:
+        #    rdf = np.loadtxt(rdf_file, delimiter=' ')
+        rdf = _rdf_single_read(d, rdf_dir, zip_file)
         all_rdf.append(rdf)
     return all_rdf
+    
+def _rdf_single_read(data_row, rdf_dir, zip_file=False):
+    """ Read single data file """
+    rdf_file = os.path.normpath(os.path.join(rdf_dir, data_row['task_id']))
+    if zip_file:
+        with gzip.open(rdf_file + '.gz', 'r') as f:
+            rdf = np.loadtxt(f, delimiter=' ')
+    else:
+        rdf = np.loadtxt(rdf_file, delimiter=' ')
+    return rdf
 
-
+def _rdf_single_read_star(args):
+    """ Make multiprocessing work with multiple arguments without starmap"""
+    return _rdf_single_read(*args)
+    
+def rdf_read_parallel(data, rdf_dir, zip_file=False, procs=None):
+    """ 
+    Read rdf files in parallel using multiprocessing
+    
+    See rdf_read for (serial) documentation and usage
+    
+    """
+    import multiprocessing as mp
+    
+    print("Reading data in parallel")
+    
+    pool = mp.Pool(procs)
+    args = [(i, rdf_dir, zip_file) for i in data]
+    rdf_collect = list(tqdm(pool.imap(_rdf_single_read_star, args), total=len(args)))
+    
+    pool.close()
+    pool.join()
+    
+    print("Data read")
+    
+    return rdf_collect
+    
+    
+    
+    
 def shell_similarity_read(data, rdf_dir):
     '''
     Read the rdf files from the dir.  

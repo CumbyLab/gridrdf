@@ -242,7 +242,7 @@ def rdf_kde(rdf_atoms, max_dist=10, bin_size=0.1, bandwidth=0.1):
     # e.g. rdf_nn_shell[0] contain all the pair distance of the first NN
     rdf_nn_shells = []
     for x in range(rdf_len):
-         rdf_nn_shells.append( [line[x]
+         rdf_nn_shells.append( [line[x][0]
                             for line in rdf_atoms.values() 
                             if len(line) > x] )
 
