@@ -247,7 +247,6 @@ if __name__ == '__main__':
                         help='features used for machine learning: \n' +
                             '   extended_rdf  \n' +
                             '   shell_similarity: shell-wise similarity values \n' +
-                            '   fourier_space:  \n' +
                             '   lattice_abc: a, b, c, alpha, beta, gamma \n' +
                             '   lattice_matrix: a 3x3 matrix of lattice \n' +
                             '   formula:  \n' + 
@@ -349,7 +348,6 @@ if __name__ == '__main__':
     if task != 'random_guess':
         all_features = [
             'extended_rdf', 'shell_similarity', 
-            'fourier_space', 
             'lattice_abc', 'lattice_matrix',
             'formula', 'composition',
             'distance_matrix',
@@ -376,15 +374,6 @@ if __name__ == '__main__':
                 X_data = all_shell_simi
             else: 
                 X_data = np.hstack((X_data, all_shell_simi))
-        if 'fourier_space' in input_features:
-            if procs == 1:
-                scatter_factors = rdf_read(data, '../fourier_space_0.1_normal/')
-            else:
-                scatter_factors = rdf_read_parallel(data, '../fourier_space_0.1_normal/', procs=procs)
-            if X_data is None:
-                X_data = scatter_factors
-            else: 
-                X_data = np.hstack((X_data, scatter_factors))
         if 'lattice_abc' in input_features:
             all_lattice = batch_lattice(data, method='abc')
             if X_data is None:

@@ -150,16 +150,6 @@ def json_order():
     with open('pero3.json','w') as f:
         json.dump(d2,f,indent=1)
 
-
-def normalize_fourier_space():
-    '''
-    '''
-    for f in os.listdir('.'):
-        fs = np.loadtxt(f, delimiter=' ')
-        scale_factor = 100 / fs.max()
-        np.savetxt('../fourier_space_0.1_normal/'+f, fs * scale_factor, delimiter=' ', fmt='%.3f')
-
-
 def make_distorted_perovskite():
     '''
     used for testing purpose for EMD + extended RDF as a similarity measure
