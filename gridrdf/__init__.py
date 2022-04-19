@@ -14,9 +14,9 @@ __all__ = ['composition',
            'data_prepare',
            'earth_mover_distance',
            'extendRDF',
-           'otherModels',
            'otherRDFs',
            'train',
            'visualization',
            ]
-           
+
+from gridrdf import *

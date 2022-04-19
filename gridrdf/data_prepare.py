@@ -25,9 +25,9 @@ from collections import Counter
 from pymatgen import Structure, Lattice, MPRester
 
 from gridrdf.composition import elements_selection
-from .extendRDF import rdf_histo, rdf_kde, get_rdf_and_atoms, shell_similarity
-from .otherRDFs import origin_rdf_histo
-from .data_io import rdf_read
+from gridrdf.extendRDF import rdf_histo, rdf_kde, get_rdf_and_atoms, shell_similarity
+from gridrdf.otherRDFs import origin_rdf_histo
+from gridrdf.data_io import rdf_read, rdf_read_parallel
 
 
 def nacl():
@@ -242,12 +242,13 @@ def batch_rdf(data,
 
     
 def main(data_source = 'MP_modulus.json',
-         tasks = ['batch_rdf',],
+         tasks = ['grid_rdf_kde',],
          MP_API_KEY = None,
          composition = {'elem':[], 'type':'consist'},
          output_dir = './outputs/',
-         output_file = 'filtered.json',
+         output_file = None,
          space_groups = [],
+         data_property = (None, -np.inf, np.inf),
          min_grid_groups = 100,
          max_dist = 10,
         ):
@@ -278,7 +279,9 @@ def main(data_source = 'MP_modulus.json',
                     to have been generated first, either as a separate task or by 
                     specifying a suitable `output_dir`).    
                 - subset_space_group
-                    Filter structures by spacegroup number(s) as a list 
+                    Filter structures by spacegroup number(s) as a list
+                - subset_property
+                    Filter by materials having a specific property (defined within the data source)
                 - grid_rdf_bin
                     Compute GRID with basic histogram binning
                 - grid_rdf_kde
@@ -299,6 +302,9 @@ def main(data_source = 'MP_modulus.json',
         space_groups : list of ints
             If task == 'subset_space_group', this argument is the space group numbers
             to be retained. If len(space_groups) == 0, all space groups will be kept.
+        data_property : list
+            Property contained in data_source (e.g. 'elasticity.K_VRH') and the (min, max) 
+            values it should adopt (inclusive)
         max_dist : float
             Maximum distance to calculate RDFs up to.
         min_grid_groups : int
@@ -350,14 +356,20 @@ def main(data_source = 'MP_modulus.json',
 
         elif task == 'subset_grid_len':
             try:
-                all_rdf = rdf_read(data, output_dir)
+                all_rdf = rdf_read_parallel(data, output_dir)
             except OSError:
                 raise OSError('One or more RDF files are missing: have they been computed?')
             for i, d in enumerate(data[:]):
                 if len(all_rdf[i]) < min_grid_groups:
                     data.remove(d)
 
-
+        elif task == 'subset_property':
+            key = data_property[0]
+            key_min = data_property[1]
+            key_max = data_property[2]
+            for d in data:
+                if d[key] < key_min or d[key] > key_max:
+                    data.remove(d)
                     
         elif task == 'grid_rdf_bin':
             batch_rdf(data, max_dist=max_dist, method='bin', output_dir = output_dir)
@@ -372,7 +384,7 @@ def main(data_source = 'MP_modulus.json',
         
         
     # Save subset to new output file if needed
-    if (len(data) != original_length and output_file is not None) or output_file is not None:
+    if output_file is not None:
         outf = os.path.normpath(os.path.join(output_dir, output_file))
         if not os.path.isdir(output_dir):
             os.mkdir(output_dir)
@@ -411,11 +423,25 @@ if __name__ == '__main__':
                         help='Cutoff distance of the RDF')       
     parser.add_argument('--min_grid_groups', type=int, default=100,
                         help = 'Minimum number of GRID groups required, below which data will be omitted if task us subset_grid_len.')
+    parser.add_argument('--prop_filter', nargs=3, metavar=('KEY', 'MIN', 'MAX'),
+                        help = 'Property (e.g. `elasticity.K_VRH`) contained in data_source, and the min/max values it can take.')
 
     args = parser.parse_args()
 
     comp_dict = {'type': args.elem_method, 'elem': args.elem_list}
-
+    
+    data_prop = []
+    data_prop.append(args.prop_filter[0])
+    for val in args.prop_filter[1:]:
+        val = val.strip("'").strip('"')
+        if 'inf' in val:
+            if val[0] == '-':
+                data_prop.append(-np.inf)
+            else:
+                data_prop.append(np.inf)
+        else:
+            data_prop.append(float(val))
+        
     spacegroups = []
     for sg in args.spacegroups:
         if '-' in sg:
@@ -424,6 +450,8 @@ if __name__ == '__main__':
             spacegroups += range(start, end+1, 1)
         else:
             spacegroups.append(int(sg))
+            
+    
     
     data = main(data_source = args.data_source,
                 tasks = args.tasks,
@@ -432,6 +460,7 @@ if __name__ == '__main__':
                 output_dir = args.output_dir,
                 max_dist = args.max_dist,  
                 min_grid_groups = args.min_grid_groups,
+                data_property = data_prop,
                 )
                 
     print('There are {} items in data'.format(len(data)))
