@@ -13,7 +13,7 @@ except:
     print('matminer is not installed, cannot calculate original RDF')
 
 
-def origin_rdf_histo(data, max_dist=10, bin_size=0.1, outdir='./'):
+def origin_rdf_histo(data, max_dist=10, bin_size=0.1, output_dir='./'):
     '''
     Calcualte the vanilla RDF using matminer.  
     BEWARE! In the implementation of RDF in matminer, the endpoint
@@ -26,11 +26,14 @@ def origin_rdf_histo(data, max_dist=10, bin_size=0.1, outdir='./'):
     Return:
         The RDFs are saved into files
     '''
+    if not os.path.isdir(output_dir):
+        os.mkdir(output_dir)
+   
     rdf_fn = RadialDistributionFunction(cutoff=max_dist, bin_size=bin_size)
     for d in data:
         struct = Structure.from_str(d['cif'], fmt='cif')
         rdf_bin = rdf_fn.featurize(struct)[0]['distribution']
-        outfile = os.path.normpath(os.path.join(outdir, d['task_id']))
+        outfile = os.path.normpath(os.path.join(output_dir, d['task_id']))
         np.savetxt(outfile, rdf_bin, delimiter=' ', fmt='%.3f')
     return
 

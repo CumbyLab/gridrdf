@@ -17,12 +17,16 @@ done ; cd .. ; done
 import json
 import math
 import argparse
+import time
 import numpy as np
 import pandas as pd
+import os
 from collections import Counter
 from pymatgen import Structure, Lattice, MPRester
 
-from .composition import elements_selection
+from gridrdf.composition import elements_selection
+from .extendRDF import rdf_histo, rdf_kde, get_rdf_and_atoms, shell_similarity
+from .otherRDFs import origin_rdf_histo
 from .data_io import rdf_read
 
 
@@ -82,7 +86,7 @@ def get_ICSD_CIFs_from_MP(APIkey):
                 properties=['task_id', 'icsd_ids', 'cif'])
     return d
 
-def insert_field(infile1='num_shell', infile2='MP_modulus_all.json', 
+def _insert_field(infile1='num_shell', infile2='MP_modulus_all.json', 
                 outfile='MP_modulus_v4.json'):
     '''
     Insert new file in the json file
@@ -109,7 +113,7 @@ def insert_field(infile1='num_shell', infile2='MP_modulus_all.json',
     return
 
 
-def json_order():
+def _json_order():
     '''
     Make the perovskite structure in the order of lattice constant
     '''
@@ -179,63 +183,255 @@ def perovskite_different_lattice(outfile=None):
     if outfile is not None:
         with open(outfile,'w') as f:
             json.dump(all_dict, f, indent=1)
+            
+    return all_dict
+            
+def batch_rdf(data,
+              max_dist=10,
+              bin_size=0.1,
+              method='bin',
+              normalize=True, 
+              gzip_file=False,
+              output_dir = './',
+              disk_time = 0.1
+              ):
+    '''
+    Read structures and output the extend RDF
 
+    Args:
+        data: input data from Materials Project
+        max_dist: cut off distance of RDF
+        method:
+            bin: binned rdf, equal to the 'uniform' method in kde,  
+                note that the 
+            kde: use kernel density estimation to give a smooth curve
+        gzip_file: in case RDF files take too much disk space, set 
+                    this to true to gzip the files (not yet test)
+    Return:
+
+    '''
+    
+    if not os.path.isdir(output_dir):
+        os.mkdir(output_dir)
+    
+    for d in data:
+        struct = Structure.from_str(d['cif'], fmt='cif')
+        prim_cell_list = list(range(len(struct)))
+        rdf_atoms = get_rdf_and_atoms(structure=struct, prim_cell_list=prim_cell_list, 
+                                        max_dist=max_dist)
+        
+        if method == 'kde':
+            rdf_bin = rdf_kde(rdf_atoms=rdf_atoms, max_dist=max_dist, bin_size=bin_size)
+        elif method == 'bin':
+            # this should be replaced by the general kde uniform method in the future
+            rdf_bin = rdf_histo(rdf_atoms=rdf_atoms, max_dist=max_dist, bin_size=bin_size)
+            if normalize:
+                rdf_bin = rdf_bin / len(struct)
+        else:
+            print('This method is not supported in RDF calculation ')
+
+        outfile = os.path.normpath(os.path.join(output_dir, d['task_id']))
+        if gzip_file:
+            with gzip.open(outfile+'.gz', 'w') as f:
+                # not yet test, need test before use
+                f.write(rdf_bin.tostring())
+        else:
+            np.savetxt(outfile, rdf_bin, delimiter=' ', fmt='%.3f')
+        time.sleep(disk_time)
+    return
+
+    
+def main(data_source = 'MP_modulus.json',
+         tasks = ['batch_rdf',],
+         MP_API_KEY = None,
+         composition = {'elem':[], 'type':'consist'},
+         output_dir = './outputs/',
+         output_file = 'filtered.json',
+         space_groups = [],
+         min_grid_groups = 100,
+         max_dist = 10,
+        ):
+    """ Main logic of data preparation. 
+    
+    
+    Args:
+        data_source: str
+            Source of MP data to process. Possible options are:
+                - nacl
+                    - data are generated using `nacl` function
+                - perovskite_lattice
+                    - generated using `perovskite_different_lattice`
+                - perovskite_distort
+                    - generated using `make_distorted_perovskite`
+                - None or MP_bulk_modulus
+                    - data containing bulk moduli are extracted from MP.
+                - ends with '.json'
+                    - data are assumed to be in a json-formatted file
+        tasks: list of str
+            One or more tasks to be performed based on the input data in order supplied.
+            Options are:
+                - subset_composition
+                    Filter based on elements. See required 'composition' argument.
+                - subset_grid_len
+                    Filter any structures containing fewer than `min_grid_groups`
+                    GRID groups for the given distance cutoff (requires GRID files 
+                    to have been generated first, either as a separate task or by 
+                    specifying a suitable `output_dir`).    
+                - subset_space_group
+                    Filter structures by spacegroup number(s) as a list 
+                - grid_rdf_bin
+                    Compute GRID with basic histogram binning
+                - grid_rdf_kde
+                    Compute GRID with Gaussian smoothing of distances
+                - original_rdf
+                    Compute basic RDF
+        MP_API_KEY: str
+            Materials project API key 
+        composition: dict
+            If task == subset_composition, this dict is required. Keys are 
+                'elem': list of species to be passed to `composition.elements_selection`
+                'type': method to filter structures: 'include' (greedy AND), 'exclude' (NOT)
+                        or 'consist' (ONLY)
+        output_dir : str
+            Location to save outputted file(s), for instance GRIDs.
+        output_file : str
+            File name for filtered data (if required).
+        space_groups : list of ints
+            If task == 'subset_space_group', this argument is the space group numbers
+            to be retained. If len(space_groups) == 0, all space groups will be kept.
+        max_dist : float
+            Maximum distance to calculate RDFs up to.
+        min_grid_groups : int
+            Minimum number of GRID groups below which data will be removed.
+                        
+            
+                    
+    """
+
+    assert 'type' in composition
+    assert 'elem' in composition
+    
+    if data_source.lower() == 'nacl':
+        data = nacl()
+    elif data_source.lower() == 'perovskite_lattice':
+        data = perovskite_different_lattice()
+    elif data_source.lower() == 'perovskite_distort':
+        data = make_distorted_perovskite()
+    elif data_source.endswith('.json'):
+        with open(data_source, 'r') as f:
+            data = json.load(f)
+    elif data_source is None or data_source.lower() == 'mp_bulk_modulus':
+        if MP_API_KEY is None:
+            raise ValueError('To access the materials project API, an API key is required')
+        data = get_MP_bulk_modulus_data(APIkey)
+    else:
+        raise ValueError(f'Unknown data source {data_source}')
+        
+    original_length = len(data)
+        
+    
+    for task in tasks:   
+        if task == 'subset_composition':
+            #print(elem_list)
+            data = elements_selection(data, elem_list=composition['elem'], mode=composition['type'])
+
+                
+        elif task == 'subset_space_group':
+            if len(space_groups) == 0:
+                sg_kept = range(230, 0, -1)
+            else:
+                sg_kept = [int(i) for i in space_groups]
+ 
+            for d in data:
+                struct = Structure.from_str(d['cif'], fmt='cif')
+                sg_num = struct.get_space_group_info()[1]
+                if sg_num not in sg_kept:
+                    data.remove(d)
+
+        elif task == 'subset_grid_len':
+            try:
+                all_rdf = rdf_read(data, output_dir)
+            except OSError:
+                raise OSError('One or more RDF files are missing: have they been computed?')
+            for i, d in enumerate(data[:]):
+                if len(all_rdf[i]) < min_grid_groups:
+                    data.remove(d)
+
+
+                    
+        elif task == 'grid_rdf_bin':
+            batch_rdf(data, max_dist=max_dist, method='bin', output_dir = output_dir)
+        elif task == 'grid_rdf_kde':
+            batch_rdf(data, max_dist=max_dist, method='kde', output_dir = output_dir)
+        elif task == 'original_rdf':
+            origin_rdf_histo(data, max_dist=max_dist, output_dir = output_dir)
+
+        else:
+            raise ValueError(f'Unknown task {task}')
+
+        
+        
+    # Save subset to new output file if needed
+    if (len(data) != original_length and output_file is not None) or output_file is not None:
+        outf = os.path.normpath(os.path.join(output_dir, output_file))
+        if not os.path.isdir(output_dir):
+            os.mkdir(output_dir)
+        with open(outf, 'w') as f:
+            json.dump(data, f, indent=1)
+            
+    return data
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Dataset prepare',
                                     formatter_class=argparse.RawTextHelpFormatter)
-    parser.add_argument('--input_file', type=str, default='../MP_modulus.json',
-                        help='the bulk modulus and structure from Materials Project')
-    parser.add_argument('--output_file', type=str, default='subset.json',
+    parser.add_argument('--data_source', type=str, default='../MP_modulus.json',
+                        help='the source of structure data in materials project format, as json file.')
+    parser.add_argument('-f', '--output_file', type=str, default='subset.json',
                         help='outpu')
-    parser.add_argument('--rdf_dir', type=str, default='./',
-                        help='dir has all the rdf files')
-    parser.add_argument('--task', type=str, default='',
-                        help='what to do with the dataset: \n' +
+    parser.add_argument('-d', '--output_dir', type=str, default='./',
+                        help='Directory to output data file(s) to')
+    parser.add_argument('--tasks', nargs='+', type=str, default='',
+                        help='Which task(s) to perform on the dataset: \n' +
+                        
                             '   subset_composition: select a subset which have specified elements: \n' +
-                            '   subset_rdf_len: drop all the ext-RDF with a length less than 100 \n' +
-                            '   subset_space_group: '
+                            '   subset_grid_len: drop all the ext-RDF with a length less than 100 \n' +
+                            '   subset_space_group: restrict to specified spacegroup number(s)\n' +
+                            '   grid_rdf_bin: compute GRID for all data_sources with simple binning\n' +
+                            '   grid_rdf_kde: compute GRID for all data_sources with Gaussian distance broadening \n' + 
+                            '   original_rdf: compute basic RDF for all data_sources'
                       )
-    parser.add_argument('--elem_list', type=str, default='O',
+                      
+    parser.add_argument('--elem_list', nargs = '+',     type=str, default='O',
                         help='only used for subset task')
+    parser.add_argument('--elem_method', type=str, default='include',
+                        help='method to use for composition filtering (include, exclude or consist)')
+    parser.add_argument('--spacegroups', nargs='+', type=str, default='',
+                        help='spacegroup numbers to filter by (can include inclusive ranges, i.e. 40-56)')
+    parser.add_argument('--max_dist', type=float, default=10.0,
+                        help='Cutoff distance of the RDF')       
+    parser.add_argument('--min_grid_groups', type=int, default=100,
+                        help = 'Minimum number of GRID groups required, below which data will be omitted if task us subset_grid_len.')
 
     args = parser.parse_args()
-    input_file = args.input_file
-    output_file = args.output_file
-    rdf_dir = args.rdf_dir
-    task = args.task
-    elem_list = args.elem_list
 
-    with open(input_file,'r') as f:
-        data = json.load(f)
+    comp_dict = {'type': args.elem_method, 'elem': args.elem_list}
+
+    spacegroups = []
+    for sg in args.spacegroups:
+        if '-' in sg:
+            start = int(sg.split('-')[0])
+            end = int(sg.split('-')[1])
+            spacegroups += range(start, end+1, 1)
+        else:
+            spacegroups.append(int(sg))
     
-    if task == 'subset_composition':
-        print(elem_list)
-        subset = elements_selection(data, elem_list=elem_list.split(), mode='consist')
-        # note that 'data' is also changed because it is defined in __main__
-        with open(output_file, 'w') as f:
-            json.dump(subset, f, indent=1)
-
-    if task == 'subset_rdf_len':
-        all_rdf = rdf_read(data, rdf_dir)
-        # note that 'data' is also changed because it is defined in __main__
-        for i, d in enumerate(data[:]):
-            if len(all_rdf[i]) < 100:
-                data.remove(d)
-
-        with open(output_file, 'w') as f:
-            json.dump(data, f, indent=1)
-
-    elif task == 'subset_space_group':
-        sg_grouped_structs = {}
-        for sg_num in range(230, 0, -1):
-            sg_grouped_structs[sg_num] = []
-    
-        for d in data:
-            struct = Structure.from_str(d['cif'], fmt='cif')
-            sg_num = struct.get_space_group_info()[1]
-            sg_grouped_structs[sg_num].append(d)
-
-        for sg_num in range(230, 0, -1):
-            with open(output_file + str(sg_num) + '.json', 'w') as f:
-                json.dump(sg_grouped_structs[sg_num], f, indent=1)
+    data = main(data_source = args.data_source,
+                tasks = args.tasks,
+                composition = comp_dict,
+                output_file = args.output_file,
+                output_dir = args.output_dir,
+                max_dist = args.max_dist,  
+                min_grid_groups = args.min_grid_groups,
+                )
+                
+    print('There are {} items in data'.format(len(data)))
