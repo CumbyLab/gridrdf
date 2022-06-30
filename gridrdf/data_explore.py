@@ -12,7 +12,12 @@ import argparse
 import os
 from tqdm import tqdm
 from pyemd import emd, emd_with_flow
-from pymatgen import Structure
+try:
+    # pymatgen < v2022
+    from pymatgen import Structure
+except ImportError:
+    # pymatgen >= v2022
+    from pymatgen.core.structure import Structure
 from pymatgen.analysis.local_env import CrystalNN
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer 
 try:

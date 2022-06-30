@@ -16,8 +16,17 @@ import sys
 import numpy as np
 import argparse
 import logging
-import itertools 
-from pymatgen import Structure, Lattice
+import itertools
+
+# Handle pymatgen v2022 changes
+try:
+    from pymatgen import Structure
+except ImportError:
+    from pymatgen.core.structure import Structure   
+try:
+    from pymatgen import Lattice
+except ImportError:
+    from pymatgen.core.lattice import Lattice
 from sklearn.neighbors import KernelDensity
 from pyemd import emd
 

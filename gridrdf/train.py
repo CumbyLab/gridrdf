@@ -10,7 +10,10 @@ import json
 import argparse
 import numpy as np
 import pandas as pd
-from pymatgen import Structure
+try:
+    from pymatgen import Structure
+except ImportError:
+    from pymatgen.core.structure import Structure
 from sklearn.kernel_ridge import KernelRidge
 from sklearn.linear_model import Lasso, ElasticNet
 from sklearn.svm import SVR, SVC

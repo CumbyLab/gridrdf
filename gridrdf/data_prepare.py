@@ -22,7 +22,18 @@ import numpy as np
 import pandas as pd
 import os
 from collections import Counter
-from pymatgen import Structure, Lattice, MPRester
+try:
+    from pymatgen import Structure
+except ImportError:
+    from pymatgen.core.structure import Structure   
+try:
+    from pymatgen import Lattice
+except ImportError:
+    from pymatgen.core.lattice import Lattice
+try:
+    from pymatgen import MPRester
+except ImportError:
+    from pymatgen.ext.matproj import MPRester
 
 from gridrdf.composition import elements_selection
 from gridrdf.extendRDF import rdf_histo, rdf_kde, get_rdf_and_atoms, shell_similarity

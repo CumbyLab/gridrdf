@@ -18,7 +18,14 @@ import numpy as np
 import pandas as pd
 import argparse
 from tqdm import tqdm
-from pymatgen import Structure, Lattice
+try:
+    from pymatgen import Structure
+except ImportError:
+    from pymatgen.core.structure import Structure   
+try:
+    from pymatgen import Lattice
+except ImportError:
+    from pymatgen.core.lattice import Lattice   
 from pymatgen.analysis.structure_matcher import StructureMatcher
 from scipy import spatial
 

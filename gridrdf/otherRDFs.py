@@ -5,7 +5,11 @@ Other types of RDF as benchmark to the GRID.
 
 import numpy as np
 import os
-from pymatgen import Structure
+try:
+    from pymatgen import Structure
+except ImportError:
+    from pymatgen.core.structure import Structure   
+    
 try:
     from matminer.featurizers.structure import RadialDistributionFunction
     from matminer.featurizers.structure import PartialRadialDistributionFunction

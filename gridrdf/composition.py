@@ -9,7 +9,11 @@ from sklearn.preprocessing import MultiLabelBinarizer
 from pymatgen.core.periodic_table import Element
 from collections import Counter
 from itertools import combinations
-from pymatgen import Structure
+
+try:
+    from pymatgen import Structure
+except ImportError:
+    from pymatgen.core.structure import Structure
 from pymatgen.analysis.local_env import CrystalNN
 
 
