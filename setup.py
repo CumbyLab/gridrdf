@@ -36,7 +36,7 @@ if __name__ == "__main__":
             "numpy",
             "pymatgen",
             "pandas",
-            "sklearn",
+            "scikit-learn",
             "pyemd",
             "matminer",
             
