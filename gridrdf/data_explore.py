@@ -1,3 +1,7 @@
+"""
+Miscellaneous utility functions to handle structures and GRID descriptions.
+
+"""
 
 import numpy as np
 import pandas as pd
@@ -16,59 +20,9 @@ try:
 except:
     print('matminer is not installed, cannot calculate structural complexity')
 
-from extendRDF import rdf_histo, rdf_kde, get_rdf_and_atoms, shell_similarity
-from composition import elements_count, bonding_type
-from otherRDFs import origin_rdf_histo
-
-
-def batch_rdf(data,
-              max_dist=10,
-              bin_size=0.1,
-              method='bin',
-              normalize=True, 
-              gzip_file=False,
-              output_dir = './'
-              ):
-    '''
-    Read structures and output the extend RDF
-
-    Args:
-        data: input data from Materials Project
-        max_dist: cut off distance of RDF
-        method:
-            bin: binned rdf, equal to the 'uniform' method in kde,  
-                note that the 
-            kde: use kernel density estimation to give a smooth curve
-        gzip_file: in case RDF files take too much disk space, set 
-                    this to true to gzip the files (not yet test)
-    Return:
-
-    '''
-    for d in data:
-        struct = Structure.from_str(d['cif'], fmt='cif')
-        prim_cell_list = list(range(len(struct)))
-        rdf_atoms = get_rdf_and_atoms(structure=struct, prim_cell_list=prim_cell_list, 
-                                        max_dist=max_dist)
-        
-        if method == 'kde':
-            rdf_bin = rdf_kde(rdf_atoms=rdf_atoms, max_dist=max_dist, bin_size=bin_size)
-        elif method == 'bin':
-            # this should be replaced by the general kde uniform method in the future
-            rdf_bin = rdf_histo(rdf_atoms=rdf_atoms, max_dist=max_dist, bin_size=bin_size)
-            if normalize:
-                rdf_bin = rdf_bin / len(struct)
-        else:
-            print('This method is not supported in RDF calculation ')
-
-        outfile = os.path.normpath(os.path.join(output_dir, d['task_id']))
-        if gzip_file:
-            with gzip.open(outfile+'.gz', 'w') as f:
-                # not yet test, need test before use
-                f.write(rdf_bin.tostring())
-        else:
-            np.savetxt(outfile, rdf_bin, delimiter=' ', fmt='%.3f')
-        time.sleep(0.1)
-    return
+from .extendRDF import rdf_histo, rdf_kde, get_rdf_and_atoms, shell_similarity
+from .composition import elements_count, bonding_type
+from .otherRDFs import origin_rdf_histo
 
 
 def batch_shell_similarity(all_rdf, method='append'):
@@ -321,8 +275,7 @@ if __name__ == '__main__':
                             '   shell_similarity: \n' +
                             '   '
                       )
-    parser.add_argument('--max_dist', type=float, default=10.0,
-                        help='Cutoff distance of the RDF')
+
 
     args = parser.parse_args()
     input_file = args.input_file
@@ -339,24 +292,10 @@ if __name__ == '__main__':
         results = num_of_shells(data=data, dir=rdf_dir)
         outfile = '../num_shell'
         np.savetxt(outfile, results, delimiter=' ', fmt='%.3f')
-    elif task == 'extend_rdf_bin':
-        batch_rdf(data, max_dist=max_dist, method='bin', output_dir = rdf_dir)
-    elif task == 'extend_rdf_kde':
-        batch_rdf(data, max_dist=max_dist, method='kde', output_dir = rdf_dir)
-    elif task == 'origin_rdf':
-        origin_rdf_histo(data, max_dist=max_dist)
+
     elif task == 'composition':
         elements_count(data)
 
-    elif task == 'shell_similarity':
-        for i, d in enumerate(data):
-            if ( i % 100 ) == 0:
-                print(i) 
-            with open(rdf_dir + '/' + d['task_id']) as f:
-                rdf = np.loadtxt(f, delimiter=' ')
-                np.savetxt('../shell_similarity/' + d['task_id'], 
-                            shell_similarity(rdf[:30]), 
-                            delimiter=' ', fmt='%.3f')
 
     elif task == 'bonding_type':
         for d in data:
@@ -372,7 +311,16 @@ if __name__ == '__main__':
             d['num_sg_operation'] = len(SpacegroupAnalyzer(struct).get_space_group_operations())
         with open(input_file.replace('v7','v8'), 'w') as f:
             json.dump(data, f, indent=1)
-
+            
+    elif task == 'shell_similarity':
+        for i, d in enumerate(data):
+            if ( i % 100 ) == 0:
+                print(i) 
+            with open(rdf_dir + '/' + d['task_id']) as f:
+                rdf = np.loadtxt(f, delimiter=' ')
+                np.savetxt('../shell_similarity/' + d['task_id'], 
+                            shell_similarity(rdf[:30]), 
+                            delimiter=' ', fmt='%.3f')
 
 
     else:

@@ -1,4 +1,9 @@
+""" Train machine learning models using GRID and RDF descriptors.
 
+Utility functions to simplify training of general ML models using
+GRID, composition and different dissimilarity measures (including
+Earth mover's distance).
+"""
 import os
 import sys
 import json
@@ -18,12 +23,13 @@ from sklearn.preprocessing import StandardScaler
 from sklearn import metrics
 from pyemd import emd
 
-from data_explore import rdf_trim, rdf_flatten, batch_shell_similarity, batch_lattice
-from composition import composition_one_hot, bonding_matrix
-from visualization import calc_obs_vs_pred, binarize_output, n_best_middle_worst
-from extendRDF import shell_similarity
-from data_io import rdf_read, rdf_read_parallel, shell_similarity_read
-from misc import int_or_str
+from .data_explore import rdf_trim, rdf_flatten, batch_shell_similarity, batch_lattice
+from .composition import composition_one_hot, bonding_matrix
+from .visualization import calc_obs_vs_pred, binarize_output, n_best_middle_worst
+from .extendRDF import shell_similarity
+from .data_io import rdf_read, rdf_read_parallel, shell_similarity_read
+from .misc import int_or_str
+
 
 # Manually create 'train_test_split' so it can be changed to 2D version if needed.
 train_test_split = sklearn.model_selection.train_test_split
@@ -241,7 +247,6 @@ if __name__ == '__main__':
                         help='features used for machine learning: \n' +
                             '   extended_rdf  \n' +
                             '   shell_similarity: shell-wise similarity values \n' +
-                            '   fourier_space:  \n' +
                             '   lattice_abc: a, b, c, alpha, beta, gamma \n' +
                             '   lattice_matrix: a 3x3 matrix of lattice \n' +
                             '   formula:  \n' + 
@@ -343,7 +348,6 @@ if __name__ == '__main__':
     if task != 'random_guess':
         all_features = [
             'extended_rdf', 'shell_similarity', 
-            'fourier_space', 
             'lattice_abc', 'lattice_matrix',
             'formula', 'composition',
             'distance_matrix',
@@ -370,15 +374,6 @@ if __name__ == '__main__':
                 X_data = all_shell_simi
             else: 
                 X_data = np.hstack((X_data, all_shell_simi))
-        if 'fourier_space' in input_features:
-            if procs == 1:
-                scatter_factors = rdf_read(data, '../fourier_space_0.1_normal/')
-            else:
-                scatter_factors = rdf_read_parallel(data, '../fourier_space_0.1_normal/', procs=procs)
-            if X_data is None:
-                X_data = scatter_factors
-            else: 
-                X_data = np.hstack((X_data, scatter_factors))
         if 'lattice_abc' in input_features:
             all_lattice = batch_lattice(data, method='abc')
             if X_data is None:

@@ -1,3 +1,5 @@
+""" Read previously generated RDF or GRID data.
+"""
 
 import numpy as np
 import gzip, tarfile
@@ -20,12 +22,6 @@ def rdf_read(data, rdf_dir, zip_file=False):
     '''
     all_rdf = []
     for d in tqdm(data, desc='rdf read', mininterval=10):
-        #rdf_file = os.path.normpath(os.path.join(rdf_dir, d['task_id']))
-        #if zip_file:
-        #    with gzip.open(rdf_file + '.gz', 'r') as f:
-        #        rdf = np.loadtxt(f, delimiter=' ')
-        #else:
-        #    rdf = np.loadtxt(rdf_file, delimiter=' ')
         rdf = _rdf_single_read(d, rdf_dir, zip_file)
         all_rdf.append(rdf)
     return all_rdf

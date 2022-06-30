@@ -1,3 +1,14 @@
+"""
+Module to compute earth mover's distance (EMD) for different inputs.
+
+Allows EMD comparison between the following features:
+- Composition (as normalised vector)
+- GRID histograms (mean of pairwise comparisons)
+- RDF
+
+The module also includes helper functions to compute dissimilarity matrices
+between multiple input pairs, for later ML.
+"""
 
 import sys
 import os
@@ -30,11 +41,10 @@ try:
 except:
     print('Element-EMD module not installed')
 
-from data_io import rdf_read, rdf_read_parallel
-from data_explore import rdf_trim, rdf_flatten
-from composition import composition_one_hot, element_indice
-from misc import int_or_str
-
+from .data_io import rdf_read, rdf_read_parallel
+from .data_explore import rdf_trim, rdf_flatten
+from .composition import composition_one_hot, element_indice
+from .misc import int_or_str
 
 def emd_formula_example():
     '''

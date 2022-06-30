@@ -1,5 +1,5 @@
 '''
-Visualization of the data
+Visualization results of machine learning models.
 '''
 
 import json

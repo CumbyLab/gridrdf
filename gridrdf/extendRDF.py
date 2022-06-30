@@ -1,11 +1,15 @@
 '''
+Generate Radial Distribution Functions (including GRID) from a pymatgen structure.
+
+Various functions to compute pairwise atomic distances and bin
+them into histograms, with optional Gaussian broadening.
+
+
 The __name__ == '__main__' part in this module is used for test runs, 
 so the input_file should contain a single structure
 Batch calculation of the whole dataset, i.e. multiple input structures is done in the
 __name__ == '__main__' part in data_explore.py
 
-NB1: The 'prim_cell_list' variable is used with the 'extend_structure' function, 
-    when the function is deprecated, this variable is kept maybe useful in the future
 '''
 
 import sys
@@ -18,68 +22,10 @@ from sklearn.neighbors import KernelDensity
 from pyemd import emd
 
 
-def extend_structure(structure, max_dist=10):
-    '''
-    Currently DEPRECATED! because that
-    pymatgen.Site.get_neighbors method automately create the extend supercell, 
-    so there is no need to extend the cell
-
-    Make supercell based on the cutoff radius(i.e. the maximum distance).  
-    Get all the inequivalent sites in a primitive cell inside a supercell.  
-    Typically this primtive cell locates in the center of a supercell.
-
-    Usage: make supercell and find the 'centered' primitive cell
-    extend_stru, prim_cell_list = extend_structure(structure=struct, max_dist=max_dist)
-
-    Args:
-        struct: pymatgen structure
-        max_dist: cutoff radius in Angstrom
-    Return:
-        extend_stru: extended structure, i.e. the supercell
-        prim_cell_list: a list of atom indexes of the centered primtive cell
-    '''
-    # get primitive structure 
-    # to drop the atomic species information, uncomment the following line
-    #struct[:] = 'X'
-    prim_stru = struct.get_primitive_structure()
-
-    # extend the structure
-    latt = prim_stru.lattice.matrix
-    latt_cross = np.array([ np.cross(latt[1], latt[2]), 
-                            np.cross(latt[2], latt[0]), 
-                            np.cross(latt[0], latt[1]) ])   
-    latt_proj = np.array([ np.dot(latt[i], latt_cross[i]) 
-                            / np.dot(latt_cross[i], latt_cross[i]) 
-                            * latt_cross[i] for i in range(3) ])
-    latt_proj_norm = np.array([ np.linalg.norm(latt_proj[i]) for i in range(3) ])
-    scale_factor = [int(np.ceil(max_dist / latt_proj_norm[i]) + 1) * 2 for i in range(3)]
-
-    # get frac coordinates of the primitive cell in the supercell
-    prim_sites = []
-    for prim_site in prim_stru.frac_coords:
-        prim_sites.append(prim_site / scale_factor + 0.5)
-
-    prim_stru.make_supercell(to_unit_cell=False, 
-                            scaling_matrix=[[scale_factor[0], 0, 0],
-                                            [0, scale_factor[1], 0],
-                                            [0, 0, scale_factor[2]]])
-    # the make_supercell method only modifies the given structure 
-    # rather than create a new structure
-    extend_stru = prim_stru
-
-    # find which atoms are in the selected primtive cell
-    prim_cell_list = []
-    for i, extend_site in enumerate(extend_stru.frac_coords):
-        for prim_site in prim_sites:
-            if np.allclose(extend_site, prim_site, rtol=1e-3):
-                prim_cell_list.append(i)
-
-    return extend_stru, prim_cell_list
-
-
 def get_raw_rdf(structure, prim_cell_list, max_dist=10):
     '''
     Get pair distance in the structure at a given cutoff.
+    
     This is the raw pair distance values before binning.    
     Currently the atomic species information is dropped.  
 
@@ -89,7 +35,7 @@ def get_raw_rdf(structure, prim_cell_list, max_dist=10):
         prim_cell_list: index of the atoms of the selected primitive cell 
             (See NB1 in the header of this file)
     Return:
-        A sortted 1d list of atomic pair distance 
+        A sorted 1d list of atomic pair distance 
     '''
     raw_rdf = []
     for site in prim_cell_list:
@@ -100,7 +46,8 @@ def get_raw_rdf(structure, prim_cell_list, max_dist=10):
 
 def get_rdf_and_atoms(structure, prim_cell_list, max_dist=10):
     '''
-    Get pair distance in the supercell, and the element symbols of the atom pair.  
+    Get pair distance in the supercell, and the element symbols of the atom pair. 
+    
     One atoms must be in the selected primtive cell.  
     The output dictionary should be like this:  
     {0: [[1.564, 'Si', 'O'],  # where '0' is the atom number
@@ -132,7 +79,7 @@ def get_rdf_and_atoms(structure, prim_cell_list, max_dist=10):
 
 def rdf_histo(rdf_atoms, max_dist=10, bin_size=0.1):
     '''
-    Convert the raw rdf with atoms to binned frequencies i.e. histogram
+    Convert the raw rdf with atoms to binned frequencies i.e. histogram.
 
     Args:
         rdf_atoms: pair distance of rdf with atomic speicies (output of get_rdf_and_atoms)
@@ -167,13 +114,13 @@ def rdf_stack_histo(rdf_atoms, structure, max_dist=10, bin_size=0.1, bond_direct
     and condsidering different atomic pairs
 
     Args:
-        rdf_atoms: pair distance of rdf with atomic speicies (output of get_rdf_and_atoms)
+        rdf_atoms: pair distance of rdf with atomic speicies (output of `get_rdf_and_atoms`)
         structure: pymatgen structure
         max_dist: cutoff of the atomic pair distance
         bin_size: bin size for generating counts
         bond_direct: if True, same atom pairs (e.g ['Si','O'] and ['O','Si']) are merged
     Return:
-        Binned rdf frequencies for each shell of neasest neighbor
+        Binned rdf frequencies for each shell of nearest neighbor
         and a string of ordered atomic pairs
     '''
     # get the longest rdf number
@@ -218,14 +165,14 @@ def rdf_stack_histo(rdf_atoms, structure, max_dist=10, bin_size=0.1, bond_direct
 
 def rdf_kde(rdf_atoms, max_dist=10, bin_size=0.1, bandwidth=0.1):
     '''
-    Convert the raw rdf with atoms to binned frequencies with Gaussian smearing
+    Convert the raw rdf with atoms to binned frequencies with Gaussian smearing.
 
     Args:
         rdf_atoms: pair distance of rdf with atomic speicies (output of get_rdf_and_atoms)
         max_dist: cutoff of the atomic pair distance
         bin_size: bin size for generating counts
     Return:
-        Gaussian smeared rdf frequencies for each shell of neasest neighbor
+        rdf_bin: Gaussian smeared rdf frequencies for each shell of neasest neighbor
     '''
     # get the longest rdf number
     rdf_count = [ len(x) for x in rdf_atoms.values() ]
