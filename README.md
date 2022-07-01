@@ -11,7 +11,7 @@ further calculations.
 This code accompanies the following paper, which should be cited
 if you use it for any future publications:
 
-[Grouped Representation of Interatomic Distances as a Similarity Measure for Crystal Structures](10.26434/chemrxiv-2022-9m4jh)
+[Grouped Representation of Interatomic Distances as a Similarity Measure for Crystal Structures](https://doi.org/10.26434/chemrxiv-2022-9m4jh)
 
 
 
@@ -25,12 +25,31 @@ The latest stable version of gridrdf can be installed using pip:
 pip install gridrdf
 ```
 
+If you are using conda, you may find it easier to create a new environment with the
+required dependencies first, before installing gridrdf using pip:
+
+```
+conda create -n gridrdf_env python=3 numpy pandas scikit-learn pymatgen scipy pyemd matminer -c defaults -c conda-forge
+conda activate gridrdf_env
+pip install gridrdf
+```
+
+
 Alternatively, the most recent development version can be installed
 by cloning the git repository, and then installing in 'development' mode:
 
 ```
 git clone https://git.ecdf.ed.ac.uk/funcmatgroup/gridrdf.git
-pip install gridrdf -e
+pip install -e gridrdf
+```
+
+Using conda with this approach, you can install the dependencies from requirements.txt:
+
+```
+git clone https://git.ecdf.ed.ac.uk/funcmatgroup/gridrdf.git
+conda env create -n gridrdf_env --file gridrdf/requirements.txt -c default -c conda-forge
+conda activate gridrdf_env
+pip install -e gridrdf
 ```
 
 # Testing
