@@ -90,13 +90,13 @@ bulk modulus  using a kNN model and EMD dissimilarity, the procedure is as follo
    ```
 2. Calculate GRID representation for each structure (generates GRID file for each structure)
    ``` python
-	gridrdf.data_prepare.batch_rdf(data[:2],
-								   max_dist=10,
-								   bin_size = 0.1,
-								   method='kde',
-								   output_dir = './GRIDS',
-								   normalize=True
-								  )
+    gridrdf.data_prepare.batch_rdf(data[:2],
+                                   max_dist=10,
+                                   bin_size = 0.1,
+                                   method='kde',
+                                   output_dir = './GRIDS',
+                                   normalize=True
+                                  )
    ```
    or from a terminal:
    
@@ -137,7 +137,7 @@ bulk modulus  using a kNN model and EMD dissimilarity, the procedure is as follo
    ```
    
    NOTE: not currently implemented for command line script
-	
+    
 Steps 2-5 can be combined into a single function call (similarly through terminal script by specifying tasks in order):
 
 ``` python
@@ -151,8 +151,8 @@ data_quick = gridrdf.data_prepare.main(data_source = './MP_modulus.json',
                                   data_property = ('elasticity.K_VRH', 0, np.inf)
                                  )
 ```
-	
-	
+    
+    
 6. Calculate pair-wise dissimilarity matrix between structures using EMD (time-consuming)
    ```
    similarity = gridrdf.earth_mover_distance.rdf_similarity_matrix(data, all_GRID, method='emd')
