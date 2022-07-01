@@ -434,7 +434,7 @@ if __name__ == '__main__':
                         help='Cutoff distance of the RDF')       
     parser.add_argument('--min_grid_groups', type=int, default=100,
                         help = 'Minimum number of GRID groups required, below which data will be omitted if task us subset_grid_len.')
-    parser.add_argument('--prop_filter', nargs=3, metavar=('KEY', 'MIN', 'MAX'),
+    parser.add_argument('--prop_filter', nargs=3, metavar=('KEY', 'MIN', 'MAX'), default=['elasticity.K_VRH', '0', 'inf'],
                         help = 'Property (e.g. `elasticity.K_VRH`) contained in data_source, and the min/max values it can take.')
 
     args = parser.parse_args()
