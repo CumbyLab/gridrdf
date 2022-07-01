@@ -1,11 +1,7 @@
 numpy
 pandas
-json
 scikit-learn
 pymatgen
-collections
 scipy
 pyemd
-gzip
-tarfile
 matminer

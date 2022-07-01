@@ -2,7 +2,6 @@
 
 __author__ = "James Cumby"
 __copyright__ = "Copyright James Cumby (2022)"
-__version__ = "0.1.0"
 __maintainer__ = "James Cumby"
 __email__ = "james.cumby@ed.ac.uk"
 __date__ = "June 30 2022"
@@ -36,7 +35,6 @@ extras_list = [r for d in extras_dict.values() for r in d]
 if __name__ == "__main__":
     setup(
         name="gridrdf",
-        version="0.1.0",
         description="Grouped representation of interatomic distances",
         long_description=open(os.path.join(module_dir, "README.md")).read(),
         long_description_content_type="text/markdown",
