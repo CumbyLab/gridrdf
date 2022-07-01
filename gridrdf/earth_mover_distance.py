@@ -43,10 +43,7 @@ from scipy.stats import wasserstein_distance
 #   2. a distance matrix need to be defined, like composition similarity
 from pyemd import emd, emd_with_flow
 
-try:
-    from ElMD import ElMD
-except:
-    print('Element-EMD module not installed')
+
 
 from .data_io import rdf_read, rdf_read_parallel
 from .data_explore import rdf_trim, rdf_flatten
@@ -59,7 +56,14 @@ def emd_formula_example():
     against the EMD in the literature
     https://github.com/lrcfmd/ElMD/
     '''
+    
+    try:
+        from ElMD import ElMD
+    except:
+        print('Element-EMD module not installed')
+        
     elem_emd = ElMD()
+        
     comp1 = elem_emd._gen_vector('Li0.7Al0.3Ti1.7P3O12')
     comp2 = elem_emd._gen_vector('La0.57Li0.29TiO3')
     pettifor_emd = elem_emd._EMD(comp1, comp2)
