@@ -5,30 +5,38 @@ crystal structures and use them to train ML models, currently
 based on properties extracted from the Materials Project.
 In addition, it contains a number of tools for computing 
 earth mover's distance (EMD) between distributions such 
-as GRID or RDF, and using the resulting disimilarities for
+as GRID or RDF, and using the resulting dissimilarities for
 further calculations.
 
 This code accompanies the following paper, which should be cited
 if you use it for any future publications:
 
-CITATION HERE WHEN ACCEPTED
+[Grouped Representation of Interatomic Distances as a Similarity Measure for Crystal Structures](10.26434/chemrxiv-2022-9m4jh)
+
 
 
 
 
 # Installation
 
-These files can either be imported as a python package (`gridrdf`) by 
-adding the `gridrdf` directory to PYTHON_PATH, or used as commandline
-scripts by using the `python -m gridrdf.MODULE` mechanism.
+The latest stable version of gridrdf can be installed using pip:
 
-The package can also be installed in development mode using `pip` or 
-`conda`.
+```
+pip install gridrdf
+```
+
+Alternatively, the most recent development version can be installed
+by cloning the git repository, and then installing in 'development' mode:
+
+```
+git clone https://git.ecdf.ed.ac.uk/funcmatgroup/gridrdf.git
+pip install gridrdf -e
+```
 
 # Testing
 
 Once downloaded or installed, it is recommended to test the code operates
-correctly. Usibng a python terminal, navigate to the `gridrdf` directory and type
+correctly. Using a python terminal, navigate to the `gridrdf` directory and type
 
 ``` bash
 python -m unittest discover -s tests
@@ -37,15 +45,22 @@ python -m unittest discover -s tests
 # Using the Code
 
 All modules contained in gridrdf have documentation describing their
-intended use. Note that many modules can also be run as command-line 
-scripts; to get more details type:
+intended use, and are grouped into 'data preparation' (`gridrdf.data_prepare`),
+'similarity calculation' (`gridrdf.earth_mover_distance`) and 'model training' (`gridrdf.train`) steps. 
+Other utility modules are also included.
+
+Submodules of gridrdf can be imported and used interactively in a python environment, but the main steps
+outlined above can also be accessed as command line scripts by calling the module directly (--help will give 
+more details of usage):
+
 ```
 python -m gridrdf.MODULE_NAME --help
 ```
 
-To re-create the results of kNN model to predict bulk modulus
-using the GRID descriptor and EMD as the dissimilarity measure,
-the procedure is as follows:
+# Intended Workflow
+
+To re-create the results presented in the publication of predicting
+bulk modulus  using a kNN model and EMD dissimilarity, the procedure is as follows:
 
 1. Import data from the materials project with calculated
    elastic moduli
@@ -104,7 +119,7 @@ the procedure is as follows:
    
    NOTE: not currently implemented for command line script
 	
-These data preparation tasks can be combined into a single function call (similarly through terminal script):
+Steps 2-5 can be combined into a single function call (similarly through terminal script by specifying tasks in order):
 
 ``` python
 data_quick = gridrdf.data_prepare.main(data_source = './MP_modulus.json',
@@ -126,7 +141,7 @@ data_quick = gridrdf.data_prepare.main(data_source = './MP_modulus.json',
    ```
    or from a terminal:
    ```
-   python earth_mover_distance.py --input_file MP_modulus.json --rdf_dir ./GRIDS/ --output_file GRID_sim --task rdf_similarity_matrix
+   python -m gridrdf.earth_mover_distance --input_file MP_modulus.json --rdf_dir ./GRIDS/ --output_file GRID_sim --task rdf_similarity_matrix
    ```
    Note: The data can also be processed in smaller chunks using `indice` (or `--data_indice` as a script) to allow parallel-processing.
 7. Use a simplified kNN model to predict bulk modulus
@@ -142,6 +157,11 @@ data_quick = gridrdf.data_prepare.main(data_source = './MP_modulus.json',
    ```
    or from a terminal:
    ```
-   python train.py --input_file MP_modulus.json --rdf_dir ./GRIDS/ --input_features distance_matrix --dist_matrix GRID_sim_whole_matrix.csv --out_dir ./ --funct knn_reg --target bulk_modulus --metrics emd --task obs_vs_pred
+   python -m gridrdf.train --input_file MP_modulus.json --rdf_dir ./GRIDS/ --input_features distance_matrix --dist_matrix GRID_sim_whole_matrix.csv --out_dir ./ --funct knn_reg --target bulk_modulus --metrics emd --task obs_vs_pred
    ```
+   
+   
+# Issues
+
+If you have any questions, comments or problems with the code, please feel free to post them as issues [here](https://git.ecdf.ed.ac.uk/funcmatgroup/gridrdf/-/issues)! 
    
