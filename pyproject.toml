@@ -1,0 +1,19 @@
+[build-system]
+requires = ["flit_core >=3.2,<4"]
+build-backend = "flit_core.buildapi"
+
+[project]
+name = "gridrdf"
+authors = [{name = "James Cumby", email = "james.cumby@ed.ac.uk"}]
+readme = "README.md"
+license = {file = "LICENSE"}
+classifiers = ["License :: OSI Approved :: MIT License",
+               "Programming Language :: Python",
+               "Development Status :: 5 - Production/Stable",
+               "Intended Audience :: Science/Research",
+               "Operating System :: OS Independent",
+               "Topic :: Scientific/Engineering"]
+dynamic = ["version", "description"]
+
+[project.urls]
+Home = "https://git.ecdf.ed.ac.uk/funcmatgroup/gridrdf"
