@@ -1,7 +1,7 @@
 numpy
 pandas
 scikit-learn
-pymatgen
+pymatgen>=2020.8.3
 scipy
 pyemd
 matminer
