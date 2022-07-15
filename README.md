@@ -106,7 +106,7 @@ bulk modulus  using a kNN model and EMD dissimilarity, the procedure is as follo
    
 3. Remove any structures with fewer than 100 GRID shells
    ```python
-   all_GRID = gridrdf.dataio.rdf_read_parallel(data, rdf_dir = './GRIDS/')
+   all_GRID = gridrdf.data_io.rdf_read_parallel(data, rdf_dir = './GRIDS/')
    for i, d in enumerate(data[:]):
        if len(all_GRID[i]) < 100:
            data.remove(d)
