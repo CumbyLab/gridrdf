@@ -47,7 +47,7 @@ Using conda with this approach, you can install the dependencies from requiremen
 
 ```
 git clone https://git.ecdf.ed.ac.uk/funcmatgroup/gridrdf.git
-conda env create -n gridrdf_env --file gridrdf/requirements.txt -c default -c conda-forge
+conda env create -n gridrdf_env --file gridrdf/requirements.txt -c defaults -c conda-forge
 conda activate gridrdf_env
 pip install -e gridrdf
 ```
