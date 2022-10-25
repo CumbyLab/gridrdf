@@ -48,7 +48,7 @@ def train_test_split_2D(X_data, y_data, test_size, random_state=1):
     X_train, X_test, y_train, y_test = \
         sklearn.model_selection.train_test_split(full_X, full_y, test_size=test_size, random_state=random_state, shuffle=True)
     
-    print(X_test.index)
+    #print(X_test.index)
      
     # Check we aren't leaking anything
     assert len(X_train.index.intersection(X_test.index)) == 0
@@ -56,13 +56,21 @@ def train_test_split_2D(X_data, y_data, test_size, random_state=1):
         
     assert len(X_train.index.intersection(X_train.columns)) == len(X_train)
     assert len(X_test.index.intersection(X_test.columns)) == len(X_test)
-        
+    
+    # To use precomputed distances correctly, we need a rectangular
+    # "X_test" set with distances to the items in "X_train"
+    X_test_rect = full_X.loc[X_test.index, X_train.columns]
+    assert X_test_rect.shape == (X_test.shape[0], X_train.shape[1])    
+    
+    X_test_rect = X_test_rect.reindex(X_train.index, axis=1).to_numpy()        
     X_train = X_train.reindex(X_train.index, axis=1).to_numpy()
     X_test = X_test.reindex(X_test.index, axis=1).to_numpy()
     
     # Check we still have zero diagonals for distance
     assert (X_train.diagonal() == 0).all()
     assert (X_test.diagonal() == 0).all()
+    
+
     
     
     # If only one training column, we need to call to_numpy differently
@@ -74,16 +82,19 @@ def train_test_split_2D(X_data, y_data, test_size, random_state=1):
         y_train = y_train[0].to_numpy()
         y_test = y_test[0].to_numpy()
 
-    return X_train, X_test, y_train, y_test
+    return X_train, X_test, X_test_rect, y_train, y_test
     
 def calc_obs_vs_pred_2D(funct, X_data, y_data, test_size, outdir='./'):
     '''
     The observation vs prediction plot for 2D X data (e.g. similarity matrix)
     '''
-    X_train, X_test, y_train, y_test = \
+    X_train, X_test, X_test_rect, y_train, y_test = \
             train_test_split_2D(X_data, y_data, test_size=test_size, random_state=1)
+    
+    
+    
     funct.fit(X_train, y_train)
-    y_pred = funct.predict(X_test)
+    y_pred = funct.predict(X_test_rect)
     y_pred_train = funct.predict(X_train)
     
     np.savetxt(os.path.normpath(os.path.join(outdir, 'test.' + str(test_size))), 
@@ -124,7 +135,7 @@ def calc_learning_curve(funct, X_data, y_data, test_size=0.1, procs=1, output_di
     ##########
     #
     # If the data are passed straight to learning_curve, the MAE ends up
-    # twice as big as if the data are permuted first (aking 2D correspondence into
+    # twice as big as if the data are permuted first (taking 2D correspondence into
     # account if a distance matrix is supplied). As such, we permute the data first
     #
     # This *probably* occurs because learning_curve performs the splitting for 

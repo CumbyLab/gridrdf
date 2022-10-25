@@ -30,10 +30,8 @@ try:
     from pymatgen import Lattice
 except ImportError:
     from pymatgen.core.lattice import Lattice
-try:
-    from pymatgen import MPRester
-except ImportError:
-    from pymatgen.ext.matproj import MPRester
+
+from pymatgen.ext.matproj import MPRester
 
 from gridrdf.composition import elements_selection
 from gridrdf.extendRDF import rdf_histo, rdf_kde, get_rdf_and_atoms, shell_similarity
@@ -70,13 +68,17 @@ def get_MP_bulk_modulus_data(APIkey):
             CIF of structure
     '''
     # put personal API key here
-    q = MPRester(APIKey)   
+    q = MPRester(APIkey)   
+    print(f"Using Materials Project database v{q.get_database_version()}")
+    
     d = q.query(criteria={'elasticity.K_VRH':{'$nin': [None, '']}}, 
                 properties=['task_id', 
                             'elasticity.K_VRH', 
                             'elasticity.G_VRH', 
                             'elasticity.elastic_anisotropy', 
                             'cif'])
+    
+    
     return d
 
 
@@ -204,7 +206,7 @@ def batch_rdf(data,
               normalize=True, 
               gzip_file=False,
               output_dir = './',
-              disk_time = 0.1
+              disk_time = 0.01
               ):
     '''
     Read structures and output the extend RDF
@@ -250,7 +252,69 @@ def batch_rdf(data,
             np.savetxt(outfile, rdf_bin, delimiter=' ', fmt='%.3f')
         time.sleep(disk_time)
     return
-
+    
+def trim_rdf_bins(data,
+                  all_rdf,
+                  number_of_shells,
+                  write_to_disk = False,
+                  output_dir = './',
+                  gzip_file=False,
+                  disk_time = 0.01,
+                  ):
+    """ Truncate all RDFs to the largest number of bins possible in the group. 
+    
+    Args:
+        data: input data from Materials Project
+        all_rdf: list of np.arrays containing RDF (or GRID) information
+        number_of_shells: number of RDF shells to trim all_GRID entries to (uses
+                          first RDF axis by default)
+        write_to_disk: whether to update existing RDF files on disk based on results
+                       (default False). This will update GRIDs that are trimmed, but 
+                       does NOT remove GRIDs that are shorter than the required length.
+        outdir: directory to write (or update) RDF files to
+        gzip_file: in case RDF files take too much disk space, set 
+                    this to true to gzip the files (not yet test)
+        disk_time: time to allow between disk writes (default 0.01)
+        
+    Returns:
+        num_trimmed: The number of RDF entries that are above the cutoff length and were
+                     trimmed to match the cutoff.
+        num_removed: The number of RDF entries that were below the cutoff and were removed
+                     from `data`.
+    """
+    
+    assert number_of_shells > 0
+    max_shells = np.max([i.shape[0] for i in all_rdf])
+    assert number_of_shells <= max_shells, f"Number of shells chosen ({number_of_shells}) is bigger than the largest number calculated ({max_shells})"
+    
+    num_removed = 0
+    num_trimmed = 0
+    new_data = []
+    new_rdfs = []
+    
+    for i, d in enumerate(data[:]):
+        if len(all_rdf[i]) < number_of_shells:
+            num_removed += 1
+            continue
+                
+        elif len(all_rdf[i]) > number_of_shells:
+            all_rdf[i] = all_rdf[i][:number_of_shells]
+            num_trimmed += 1
+            
+            if write_to_disk:
+                outfile = os.path.normpath(os.path.join(output_dir, d['task_id']))
+                if gzip_file:
+                    with gzip.open(outfile+'.gz', 'w') as f:
+                        # not yet test, need test before use
+                        f.write(all_rdf[i].tostring())
+                else:
+                    np.savetxt(outfile, all_rdf[i], delimiter=' ', fmt='%.3f')
+                time.sleep(disk_time)
+        new_data.append(data[i])
+        new_rdfs.append(all_rdf[i])
+                
+    return new_data, new_rdfs, num_trimmed, num_removed
+    
     
 def main(data_source = 'MP_modulus.json',
          tasks = ['grid_rdf_kde',],
@@ -260,8 +324,9 @@ def main(data_source = 'MP_modulus.json',
          output_file = None,
          space_groups = [],
          data_property = (None, -np.inf, np.inf),
-         min_grid_groups = 100,
+         num_grid_shells = 100,
          max_dist = 10,
+         GRIDS = None,
         ):
     """ Main logic of data preparation. 
     
@@ -318,8 +383,8 @@ def main(data_source = 'MP_modulus.json',
             values it should adopt (inclusive)
         max_dist : float
             Maximum distance to calculate RDFs up to.
-        min_grid_groups : int
-            Minimum number of GRID groups below which data will be removed.
+        num_grid_shells : int
+            Number of GRID groups to trim/filter data to
                         
             
                     
@@ -340,14 +405,15 @@ def main(data_source = 'MP_modulus.json',
     elif data_source is None or data_source.lower() == 'mp_bulk_modulus':
         if MP_API_KEY is None:
             raise ValueError('To access the materials project API, an API key is required')
-        data = get_MP_bulk_modulus_data(APIkey)
+        data = get_MP_bulk_modulus_data(MP_API_KEY)
     else:
         raise ValueError(f'Unknown data source {data_source}')
         
     original_length = len(data)
         
     
-    for task in tasks:   
+    for task in tasks:  
+        print("Performing ", task)
         if task == 'subset_composition':
             #print(elem_list)
             data = elements_selection(data, elem_list=composition['elem'], mode=composition['type'])
@@ -366,13 +432,19 @@ def main(data_source = 'MP_modulus.json',
                     data.remove(d)
 
         elif task == 'subset_grid_len':
-            try:
+            if GRIDS is None:
                 all_rdf = rdf_read_parallel(data, output_dir)
-            except OSError:
-                raise OSError('One or more RDF files are missing: have they been computed?')
-            for i, d in enumerate(data[:]):
-                if len(all_rdf[i]) < min_grid_groups:
-                    data.remove(d)
+            else:
+                all_rdf = GRIDS
+                
+            data, all_rdf, trimmed, removed = trim_rdf_bins(data = data,
+                                                             all_rdf = all_rdf,
+                                                             number_of_shells = num_grid_shells,
+                                                             write_to_disk = True,
+                                                             output_dir = output_dir,
+                                                             )
+            print(f"    Removed {removed} entries and trimmed {trimmed} entries based on a cutoff of {num_grid_shells} shells")
+
 
         elif task == 'subset_property':
             key = data_property[0]
@@ -391,6 +463,9 @@ def main(data_source = 'MP_modulus.json',
 
         else:
             raise ValueError(f'Unknown task {task}')
+            
+        print("Removed {} structure entries based on {}".format(original_length - len(data), task))
+        original_length = len(data)
 
         
         
@@ -470,7 +545,7 @@ if __name__ == '__main__':
                 output_file = args.output_file,
                 output_dir = args.output_dir,
                 max_dist = args.max_dist,  
-                min_grid_groups = args.min_grid_groups,
+                num_grid_shells = args.min_grid_groups,
                 data_property = data_prop,
                 )
                 

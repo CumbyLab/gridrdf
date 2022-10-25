@@ -516,7 +516,12 @@ def rdf_similarity(baseline_rdf, all_rdf):
     return rdf_emd
 
 
-def rdf_similarity_matrix(data, all_rdf, indice=None, method='emd'):
+def rdf_similarity_matrix(data,
+                          all_rdf,
+                          indice=None,
+                          method='emd',
+                          max_distance = 10,
+                          ):
     '''
     Calculate the earth mover's distance between all RDF pairs in a large dataset
     Scipy wassertein is used
@@ -532,8 +537,12 @@ def rdf_similarity_matrix(data, all_rdf, indice=None, method='emd'):
         a pandas dataframe with all pairwise distance
         for multiple shells rdf the distance is the mean value of all shells
     '''
-    # used for wasserstein distance
-    emd_bins = np.linspace(0, 10, 101)
+    
+    rdf_lengths = [i.shape[0] for i in all_rdf]
+    assert len(set(rdf_lengths)) == 1, "All RDFs (or GRIDs) must have the same number of bins - use `data_prepare.trim_rdf_bins` first"
+    
+    # used for wasserstein distance.
+    emd_bins = np.linspace(0, max_distance, all_rdf[0].shape[-1])
 
     # if indice is None, then loop over the whole dataset
     if not indice:
@@ -541,7 +550,11 @@ def rdf_similarity_matrix(data, all_rdf, indice=None, method='emd'):
 
     if len(all_rdf[0].shape) == 2:
         # typically for extend RDF
-        df = pd.DataFrame([])
+        
+        ids = []
+        for i in range(indice[0], indice[1]):
+            ids.append(data[i]['task_id'])
+        df = pd.DataFrame(np.zeros((len(ids), len(ids))), index=ids, columns=ids)
         for i1 in tqdm(range(indice[0], indice[1]), desc='similarity matrix rows', mininterval=10):
             d1 = data[i1]
             for i2, d2 in enumerate(data):
