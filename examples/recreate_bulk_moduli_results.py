@@ -60,7 +60,7 @@ all_GRID = gridrdf.data_io.rdf_read_parallel(data, rdf_dir = './GRIDS/')
 gridrdf.composition.element_indice()
 
 data_subset = gridrdf.data_prepare.main(data_source = data_file,
-                                          tasks = ['subset_grid_len', 'subset_composition', 'subset_property'],
+                                          tasks = ['subset_property', 'subset_composition', 'subset_grid_len', ],
                                           output_dir = './GRIDS',
                                           MP_API_KEY=APIkey,
                                           output_file = 'subset.json',
