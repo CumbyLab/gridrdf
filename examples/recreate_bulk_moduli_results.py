@@ -18,20 +18,21 @@ import sklearn
 
 # Step 1 - Import bulk moduli data from materials project
 APIkey = os.environ.get('MP_API_KEY')
-data_file = 'testing.json'
+data_file = 'MP_modulus.json'
 
 
 if APIkey is None:
     raise ValueError("You need to provide your (legacy) Materials Project API key to run, either as the environment variable `MP_API_KEY` or by manually adding it to this script.")
 
-#print("Extracting bulk modulus data from Materials Project")
-#data = gridrdf.data_prepare.get_MP_bulk_modulus_data(APIkey)
-#with open(data_file, 'w') as f:
-#    json.dump(data, f)
+print("Extracting bulk modulus data from Materials Project")
+data = gridrdf.data_prepare.get_MP_bulk_modulus_data(APIkey)
+with open(data_file, 'w') as f:
+    json.dump(data, f)
   
-# Use the following to bypass the materials project API  
-with open(data_file, 'r') as f:
-    data = json.load(f)
+# Alternatively, uncomment below to 
+# Use the default file and bypass the materials project API  
+#with open(data_file, 'r') as f:
+#    data = json.load(f)
 
 #print(f"Obtained {len(data)} entries with bulk moduli from Materials Project")
 
