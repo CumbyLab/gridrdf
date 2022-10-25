@@ -20,12 +20,12 @@ __all__ = ['composition',
            'visualization',
            ]
 
-#import gridrdf.composition
-#import gridrdf.data_explore
-#import gridrdf.data_io
-#import gridrdf.data_prepare
-#import gridrdf.earth_mover_distance
-#import gridrdf.extendRDF
-#import gridrdf.otherRDFs
-#import gridrdf.train
-#import gridrdf.visualization
+from . import composition
+from . import data_explore
+from . import data_io
+from . import data_prepare
+from . import earth_mover_distance
+from . import extendRDF
+from . import otherRDFs
+from . import train
+from . import visualization
