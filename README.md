@@ -29,7 +29,7 @@ If you are using conda, you may find it easier to create a new environment with 
 required dependencies first, before installing gridrdf using pip:
 
 ```
-conda create -n gridrdf_env python=3 numpy pandas scikit-learn pymatgen scipy pyemd matminer -c defaults -c conda-forge
+conda create -n gridrdf_env -f environment.yml
 conda activate gridrdf_env
 pip install gridrdf
 ```
@@ -40,7 +40,7 @@ by cloning the git repository, and then installing in 'development' mode:
 
 ```
 git clone https://git.ecdf.ed.ac.uk/funcmatgroup/gridrdf.git
-pip install -e gridrdf
+pip install -e gridrdf/
 ```
 
 Using conda with this approach, you can install the dependencies from requirements.txt:
@@ -84,10 +84,13 @@ bulk modulus  using a kNN model and EMD dissimilarity, the procedure is as follo
 1. Import data from the materials project with calculated
    elastic moduli
    ``` python
-   data = get_MP_bulk_modulus_data(APIkey)
+   data = gridrdf.data_prepare.get_MP_bulk_modulus_data(APIkey)
    with open('MP_modulus.json') as f:
        gridrdf.json.dumps(data, f)
    ```
+   
+   NOTE: gridrdf currently relies on the legacy Materials Project API, so needs an old API KEY
+   
 2. Calculate GRID representation for each structure (generates GRID file for each structure)
    ``` python
     gridrdf.data_prepare.batch_rdf(data[:2],
