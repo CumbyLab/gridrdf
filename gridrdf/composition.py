@@ -228,18 +228,26 @@ def elements_selection(data, elem_list, mode='include'):
     Return:
         A new dataset after selection
     '''
+    
+    new_data = []
+    
     for d in data[:]:
         elements = Structure.from_str(d['cif'], fmt='cif').symbol_set
         if mode == 'include':
             if set(elem_list).isdisjoint(elements):
-                data.remove(d)
+                continue
+                #data.remove(d)
         elif mode == 'exclude':
             if not set(elem_list).isdisjoint(elements):
-                data.remove(d)
+                continue
+                #data.remove(d)
         elif mode == 'consist':
             if not set(elements).issubset(elem_list):
-                data.remove(d)
-    return data
+                continue
+                #data.remove(d)
+                #print("Removed", d['task_id'], set(elements))
+        new_data.append(d)
+    return new_data
 
 
 def similarity_matrix(input_file='dist_matrix', normalize='inverse', order='pt_number'):

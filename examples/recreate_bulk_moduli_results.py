@@ -24,31 +24,36 @@ data_file = 'MP_modulus.json'
 if APIkey is None:
     raise ValueError("You need to provide your (legacy) Materials Project API key to run, either as the environment variable `MP_API_KEY` or by manually adding it to this script.")
 
-print("Extracting bulk modulus data from Materials Project")
-data = gridrdf.data_prepare.get_MP_bulk_modulus_data(APIkey)
-with open(data_file, 'w') as f:
-    json.dump(data, f)
+#print("Extracting bulk modulus data from Materials Project")
+#data = gridrdf.data_prepare.get_MP_bulk_modulus_data(APIkey)
+#with open(data_file, 'w') as f:
+#    json.dump(data, f)
   
 # Alternatively, uncomment below to 
-# Use the default file and bypass the materials project API  
-#with open(data_file, 'r') as f:
-#    data = json.load(f)
+# Use the distributed file containing the same
+# data as the original manuscript  
+with open(data_file, 'r') as f:
+    data = json.load(f)
 
 #print(f"Obtained {len(data)} entries with bulk moduli from Materials Project")
 
 # Step 2 - Prepare GRIDs
+# Can be commented out if GRIDS already exist somewhere.
 print("Calculating GRID representations...")
-gridrdf.data_prepare.batch_rdf(data,
-                               max_dist=10,
-                               bin_size = 0.1,
-                               method='kde',
-                               output_dir = './GRIDS',
-                               normalize=True
-                               )
-print("Done.")                               
+if os.path.exists('./GRIDS'):
+    inp = input('"./GRIDS" folder already exists - do you want to overwrite its contents (y/N)? ')
+if len(inp) > 0 and inp.lower()[0] == 'y':
+    gridrdf.data_prepare.batch_rdf(data,
+                                   max_dist=10,
+                                   bin_size = 0.1,
+                                   method='kde',
+                                   output_dir = './GRIDS',
+                                   normalize=True
+                                   )
+    print("Done.")                               
 
 # Load GRIDS into memory to save time later
-all_GRID = gridrdf.data_io.rdf_read_parallel(data, rdf_dir = './GRIDS/')                              
+#all_GRID = gridrdf.data_io.rdf_read_parallel(data, rdf_dir = './GRIDS/')                              
 
 
 # Step 3 - Remove any structures with fewer than 100 GRID shells
@@ -60,14 +65,14 @@ all_GRID = gridrdf.data_io.rdf_read_parallel(data, rdf_dir = './GRIDS/')
 gridrdf.composition.element_indice()
 
 data_subset = gridrdf.data_prepare.main(data_source = data_file,
-                                          tasks = ['subset_property', 'subset_composition', 'subset_grid_len', ],
+                                          tasks = ['subset_composition', 'subset_property', 'subset_grid_len', ],
                                           output_dir = './GRIDS',
                                           MP_API_KEY=APIkey,
                                           output_file = 'subset.json',
                                           num_grid_shells = 100,
                                           composition = {'elem': gridrdf.composition.periodic_table_78, 'type':'consist'},
                                           data_property = ('elasticity.K_VRH', 0, np.inf),
-                                          GRIDS = all_GRID,
+                                          #GRIDS = all_GRID,
                                          )
        
 

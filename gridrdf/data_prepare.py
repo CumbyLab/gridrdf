@@ -292,14 +292,16 @@ def trim_rdf_bins(data,
     new_data = []
     new_rdfs = []
     
-    for i, d in enumerate(data[:]):
-        if len(all_rdf[i]) < number_of_shells:
+    for i, d in enumerate(data):
+        if all_rdf[i].shape[0] < number_of_shells:
             num_removed += 1
             continue
                 
-        elif len(all_rdf[i]) > number_of_shells:
+        elif all_rdf[i].shape[0] > number_of_shells:
+            #print('Started: ', all_rdf[i].shape[0])
             all_rdf[i] = all_rdf[i][:number_of_shells]
             num_trimmed += 1
+            #print('Ended: ', all_rdf[i].shape[0])
             
             if write_to_disk:
                 outfile = os.path.normpath(os.path.join(output_dir, d['task_id']))
@@ -308,8 +310,10 @@ def trim_rdf_bins(data,
                         # not yet test, need test before use
                         f.write(all_rdf[i].tostring())
                 else:
-                    np.savetxt(outfile, all_rdf[i], delimiter=' ', fmt='%.3f')
+                    np.savetxt(outfile, all_rdf[i][:number_of_shells], delimiter=' ', fmt='%.3f')
                 time.sleep(disk_time)
+            
+                
         new_data.append(data[i])
         new_rdfs.append(all_rdf[i])
                 
@@ -413,7 +417,7 @@ def main(data_source = 'MP_modulus.json',
         
     
     for task in tasks:  
-        print("Performing ", task)
+        print("Performing ", task, "on ", len(data), "entries.")
         if task == 'subset_composition':
             #print(elem_list)
             data = elements_selection(data, elem_list=composition['elem'], mode=composition['type'])
@@ -443,6 +447,9 @@ def main(data_source = 'MP_modulus.json',
                                                              write_to_disk = True,
                                                              output_dir = output_dir,
                                                              )
+                                                             
+            #GRIDS = all_rdf
+            
             print(f"    Removed {removed} entries and trimmed {trimmed} entries based on a cutoff of {num_grid_shells} shells")
 
 
@@ -450,7 +457,7 @@ def main(data_source = 'MP_modulus.json',
             key = data_property[0]
             key_min = data_property[1]
             key_max = data_property[2]
-            for d in data:
+            for d in data[:]:
                 if d[key] < key_min or d[key] > key_max:
                     data.remove(d)
                     
