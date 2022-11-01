@@ -36,7 +36,7 @@ def origin_rdf_histo(data, max_dist=10, bin_size=0.1, output_dir='./'):
     rdf_fn = RadialDistributionFunction(cutoff=max_dist, bin_size=bin_size)
     for d in data:
         struct = Structure.from_str(d['cif'], fmt='cif')
-        rdf_bin = rdf_fn.featurize(struct)[0]['distribution']
+        rdf_bin = rdf_fn.featurize(struct)
         outfile = os.path.normpath(os.path.join(output_dir, d['task_id']))
         np.savetxt(outfile, rdf_bin, delimiter=' ', fmt='%.3f')
     return
