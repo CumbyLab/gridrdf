@@ -82,7 +82,7 @@ class TestMainOnline(unittest.TestCase):
             data = data_prepare.main(data_source = 'perovskite_distort',
                                      tasks = ['subset_grid_len',],
                                      output_dir = './_test_fixtures',
-                                     min_grid_groups = 100)
+                                     num_grid_shells = 100)
 
     def test_grid_bin(self):
         data = data_prepare.main(data_source = 'perovskite_distort',
@@ -120,7 +120,7 @@ class TestMainOnline(unittest.TestCase):
                           output_file = None,
                           output_dir = './_test_fixtures',
                           max_dist = 6,
-                          min_grid_groups = 80
+                          num_grid_shells = 80
                           )
                           
         self.assertEqual(len(data), len(glob.glob('./_test_fixtures/*')))                                               
@@ -141,7 +141,7 @@ class TestMainOffline(unittest.TestCase):
         data = data_prepare.main(data_source = self.pero_json,
                           tasks = ['subset_grid_len',],
                           output_dir = self.pero_grids,
-                          min_grid_groups = 100,
+                          num_grid_shells = 100,
                           )
         self.assertEqual(len(data), 13)
 
