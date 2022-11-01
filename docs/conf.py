@@ -33,8 +33,8 @@ try:  # for Sphinx >= 1.7
 except ImportError:
     from sphinx import apidoc
 
-output_dir = os.path.join(__location__, "api")
-module_dir = os.path.join(__location__, "../src/gridrdf")
+output_dir = os.path.relpath(os.path.join(__location__, "api"))
+module_dir = os.path.relpath(os.path.join(__location__, "../src/gridrdf"))
 try:
     shutil.rmtree(output_dir)
 except FileNotFoundError:
@@ -49,7 +49,7 @@ try:
     if tuple(sphinx.__version__.split(".")) >= ("1", "7"):
         # This is a rudimentary parse_version to avoid external dependencies
         args = args[1:]
-
+    print("Running APIdoc using ", output_dir, module_dir)
     apidoc.main(args)
 except Exception as e:
     print("Running `sphinx-apidoc` failed!\n{}".format(e))
