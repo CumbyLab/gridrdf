@@ -429,7 +429,7 @@ def composition_similarity(baseline_id, data, index='z_number_78'):
     return compo_emd
 
 
-def composition_similarity_matrix(data, indice=None, index='z_number_78'):
+def composition_similarity_matrix(data, indice=None, index='z_number_78', elem_similarity_file='similarity_matrix.csv'):
     '''
     Calcalate pairwise earth mover's distance of all compositions, the composition should be 
     a 78-element vector, as the elemental similarity_matrix is 78x78 matrix in the order of  
@@ -455,7 +455,6 @@ def composition_similarity_matrix(data, indice=None, index='z_number_78'):
         indice = [0, len(data)]
     
     dist = []
-    elem_similarity_file = os.path.join(sys.path[0], 'similarity_matrix.csv')
     dist_matrix = pd.read_csv(elem_similarity_file, index_col='ionA')
     dist_matrix = 1 / (np.log10(1 / dist_matrix + 1))
 
@@ -463,8 +462,9 @@ def composition_similarity_matrix(data, indice=None, index='z_number_78'):
         dist_matrix = dist_matrix.reindex(columns=pettifor, index=pettifor) 
     # the earth mover's distance package need order C and float64 astype('float64')
     dist_matrix = dist_matrix.values.copy(order='C')
-
-    compo_emd = pd.DataFrame([])
+    
+    ids = data.iloc[indice[0]:indice[1]].index
+    compo_emd = pd.DataFrame(np.zeros((indice[-1], indice[-1])), index=ids, columns=ids )
     for i1 in range(indice[0], indice[1]):
         mp_id_1 = data.index[i1]
         for i2, mp_id_2 in enumerate(data.index):

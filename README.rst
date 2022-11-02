@@ -24,7 +24,9 @@
     :alt: Project generated with PyScaffold
     :target: https://pyscaffold.org/
 
-|
+.. image:: https://zenodo.org/badge/515119558.svg
+   :alt: Latest Zenodo badge
+   :target: https://zenodo.org/badge/latestdoi/515119558
 
 =======
 gridrdf
