@@ -113,7 +113,12 @@ def composition_one_hot(data, method='percentage', index='z_number_78', only_ele
     pero_tab_nums = []
     mp_index = []
     for d in data:
-        struct = Structure.from_str(d['cif'], fmt='cif')
+        if 'cif' in d:
+            struct = Structure.from_str(d['cif'], fmt='cif')
+        elif 'structure' in d:
+            struct = d['structure']
+        else:
+            raise KeyError('No known PyMatGen input in data')
         # the struct.species method give a list of each site, 
         # e.g. for SrTiO3 the output is 
         # [Element Sr, Element Ti, Element O, Element O, Element O]
