@@ -203,7 +203,12 @@ def rdf_kde(rdf_atoms, max_dist=10, bin_size=0.1, bandwidth=0.1):
     kde = KernelDensity(kernel='gaussian', bandwidth=bandwidth)
     for x in rdf_nn_shells:
         log_dens = kde.fit(np.array(x)[:, np.newaxis]).score_samples(bins)
-        rdf_bin.append(np.exp(log_dens))
+        # Due to Gaussian smearing hitting the edge of the RDF range,
+        # occasionally the densities do not sum to 1.
+        # We normalize here, so Wasserstein_distance doesn't need to
+        dens = np.exp(log_dens)
+        dens = dens / dens.sum()
+        rdf_bin.append(dens)
 
     return np.array(rdf_bin)
 

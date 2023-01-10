@@ -249,7 +249,7 @@ def batch_rdf(data,
                 # not yet test, need test before use
                 f.write(rdf_bin.tostring())
         else:
-            np.savetxt(outfile, rdf_bin, delimiter=' ', fmt='%.3f')
+            np.savetxt(outfile, rdf_bin, delimiter=' ', fmt='%.6f')
         time.sleep(disk_time)
     return
     

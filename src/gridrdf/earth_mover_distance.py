@@ -28,6 +28,7 @@ except ImportError:
     from pymatgen.core.lattice import Lattice   
 from pymatgen.analysis.structure_matcher import StructureMatcher
 from scipy import spatial
+from scipy.sparse import coo_matrix
 
 # the wasserstein distance in scipy treats frequencies of each bin as a value, 
 # and then builds the distributions from those values and computes the distance. 
@@ -476,9 +477,56 @@ def composition_similarity_matrix(data, indice=None, index='z_number_78', elem_s
             else:
                 compo_emd.loc[mp_id_1, mp_id_2] = np.nan
     return compo_emd
+    
+def rdf_emd_similarity(rdf_a, rdf_b, max_distance=10, method='fast'):
+    """
+    Compute EMD similarity between two RDF distributions (1D or 2D)
+    
+    Notes
+    -----
+    
+    This is the most time-consuming step in computing EMD similarity between distributions (particularly GRIDs).
+    TODO: optimise this method further
+    
+    The "fast" method joins all GRID shells into a single 1D vector, and uses a modified distance metric so that
+    comparisons between equivalent shells will give the same EMD, but distributions between shells have a high EMD contribution
+    (**unless the distributions are not normalised**). This requires only one call to `wasserstein_distance` (with n_shell*max_dist bins)
+    rather than n_shell calls to `wasserstein_distance` (each with max_dist bins).
+    
+    """
+    
+    assert rdf_a.shape == rdf_b.shape
+    emd_bins = np.linspace(0, max_distance, rdf_a.shape[-1])
+    
+    if len(rdf_a.shape) == 2:
+        if method=='orig':
+            shell_distances = []
+            for j in range(rdf_a.shape[0]):
+                shell_distances.append(wasserstein_distance(emd_bins, emd_bins, 
+                                                            rdf_a[j], rdf_b[j]))
+                                                            
 
-
-def rdf_similarity(baseline_rdf, all_rdf):
+            return np.array(shell_distances).mean()
+        elif method=='fast':
+            assert np.isclose(rdf_a.sum(axis=1), 1.0).all(), "All GRID shells must be normalized to 1.0 in order for the fast method to work correctly."
+            assert np.isclose(rdf_b.sum(axis=1), 1.0).all(), "All GRID shells must be normalized to 1.0 in order for the fast method to work correctly."
+            shell_offsets = np.arange(0, rdf_a.shape[0]) * emd_bins[-1]
+            emd_bins_1D = (np.vstack([emd_bins]*rdf_a.shape[0]) + np.column_stack([shell_offsets] * rdf_a.shape[-1]))
+            if isinstance(rdf_a, np.ndarray) and isinstance(rdf_b, np.ndarray):
+                # Using standard NumPy array processing
+                emd_bins_1D = emd_bins_1D.ravel()
+                return wasserstein_distance(emd_bins_1D, emd_bins_1D, rdf_a.ravel(), rdf_b.ravel())
+            elif isinstance(rdf_a, coo_matrix) and isinstance(rdf_b, coo_matrix):
+                # We are using sparse array, so can gain a significant speedup (~2-5-fold)
+                emd_bins_a = emd_bins_1D[rdf_a.row, rdf_a.col]
+                emd_bins_b = emd_bins_1D[rdf_b.row, rdf_b.col]
+                return wasserstein_distance(emd_bins_a, emd_bins_b, rdf_a.data, rdf_b.data)
+    elif len(rdf_a.shape) == 1:
+        return wasserstein_distance(emd_bins, emd_bins, rdf_a, rdf_b)
+                                                            
+    
+    
+def rdf_row_similarity(baseline_rdf, all_rdf, max_distance = 10):
     '''
     Calculate the earth mover's distance between two RDFs
     Current support vanilla rdf and extend rdf
@@ -500,12 +548,13 @@ def rdf_similarity(baseline_rdf, all_rdf):
     if len(rdf_1.shape) == 2:
         dist_matrix = dist_matrix_1d(len(rdf_1[0]))
         for d, rdf_2 in enumerate(all_rdf):
-            rdf_len = np.array([len(rdf_1), len(rdf_2)]).min()
-            shell_distances = []
-            for j in range(rdf_len):
-                shell_distances.append(wasserstein_distance(emd_bins, emd_bins, rdf_1[j], rdf_2[j]))
-                #shell_distances.append(emd(rdf_1[j], rdf_2[j], dist_matrix))
-            rdf_emd.loc[d] = np.array(shell_distances).mean()
+            #rdf_len = np.array([len(rdf_1), len(rdf_2)]).min()
+            #shell_distances = []
+            #for j in range(rdf_len):
+            #    shell_distances.append(wasserstein_distance(emd_bins, emd_bins, rdf_1[j], rdf_2[j]))
+            #    #shell_distances.append(emd(rdf_1[j], rdf_2[j], dist_matrix))
+            #rdf_emd.loc[d] = np.array(shell_distances).mean()
+            rdf_emd.loc[d] = rdf_emd_similarity(rdf_1, rdf_2, max_distance=max_distance)
 
     elif len(rdf_1.shape) == 1:
         dist_matrix = dist_matrix_1d(len(rdf_1))
@@ -542,7 +591,7 @@ def rdf_similarity_matrix(data,
     assert len(set(rdf_lengths)) == 1, "All RDFs (or GRIDs) must have the same number of bins - use `data_prepare.trim_rdf_bins` first"
     
     # used for wasserstein distance.
-    emd_bins = np.linspace(0, max_distance, all_rdf[0].shape[-1])
+    #emd_bins = np.linspace(0, max_distance, all_rdf[0].shape[-1])
 
     # if indice is None, then loop over the whole dataset
     if not indice:
@@ -559,18 +608,7 @@ def rdf_similarity_matrix(data,
             d1 = data[i1]
             for i2, d2 in enumerate(data):
                 if i1 <= i2:
-                    shell_distances = []
-                    for j in range(len(all_rdf[0])):
-                        if method == 'emd':
-                            try:
-                                shell_distances.append(wasserstein_distance(emd_bins, emd_bins, 
-                                                                        all_rdf[i1][j], all_rdf[i2][j]))
-                            except ValueError:
-                                print('Error determining distance for {}; consider removing from analysis'.format(i1))
-                        elif method == 'cosine':
-                            shell_distances.append(spatial.distance.cosine(all_rdf[i1][j], all_rdf[i2][j]))
-                        
-                    df.loc[d1['task_id'], d2['task_id']] = np.array(shell_distances).mean()
+                    df.loc[d1['task_id'], d2['task_id']] = rdf_emd_similarity(all_rdf[i1], all_rdf[i2], max_distance=max_distance)
                 else:
                     df.loc[d1['task_id'], d2['task_id']] = np.nan
     elif len(all_rdf[0].shape) == 1:
@@ -581,8 +619,8 @@ def rdf_similarity_matrix(data,
             for i2, d2 in enumerate(data):
                 if i1 <= i2:
                     if method == 'emd':
-                        shell_distance = wasserstein_distance(emd_bins, emd_bins, 
-                                                            all_rdf[i1], all_rdf[i2])
+                        shell_distance = rdf_emd_similarity(all_rdf[i1], all_rdf[i2], max_distance=max_distance)
+                        
                     elif method == 'cosine':
                         shell_distance = spatial.distance.cosine(all_rdf[i1], all_rdf[i2])
 
