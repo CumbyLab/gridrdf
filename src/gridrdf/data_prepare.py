@@ -34,7 +34,7 @@ except ImportError:
 from pymatgen.ext.matproj import MPRester
 
 from gridrdf.composition import elements_selection
-from gridrdf.extendRDF import rdf_histo, rdf_kde, get_rdf_and_atoms, shell_similarity
+from gridrdf.extendRDF import rdf_histo, rdf_kde, get_rdf_and_atoms
 from gridrdf.otherRDFs import origin_rdf_histo
 from gridrdf.data_io import rdf_read, rdf_read_parallel
 

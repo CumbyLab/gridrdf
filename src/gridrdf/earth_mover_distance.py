@@ -30,6 +30,9 @@ from pymatgen.analysis.structure_matcher import StructureMatcher
 from scipy import spatial
 from scipy.sparse import coo_matrix
 
+# Used for faster version of EMD
+import numba as nb
+
 # the wasserstein distance in scipy treats frequencies of each bin as a value, 
 # and then builds the distributions from those values and computes the distance. 
 # You can either simply pass the values that you create histograms from 
@@ -477,7 +480,89 @@ def composition_similarity_matrix(data, indice=None, index='z_number_78', elem_s
             else:
                 compo_emd.loc[mp_id_1, mp_id_2] = np.nan
     return compo_emd
+
+@nb.njit(parallel=True)
+def _emd_cumsum_row(cumsum_grid_array, index, bin_width):
+    """Super-fast implementation of EMD with Numba support for an array of structures.
     
+    WARNING: This algorithm does not do any error checking! It assumes that the input is 
+             a NumPy array of cumulative, normalised grid distributions.
+
+    This is optimised to calculate EMD between one GRID and many others in parallel, with
+    the aim to create a 2D EMD distance matrix. As such, it only computes EMD to structures
+    with index greater or equal to `index`.
+
+
+    Parameters
+    ----------
+    
+    cumsum_grid_array: np.ndarray, shape (nstructures, ngrid_shells, nbins)
+        Cumulative distributions of normalised GRIDs, stacked into a single 3D tensor. 
+        IMPORTANT: cumulative distributions must all sum to the same value!
+
+    index: int
+        Index of structure to calculate pairwise EMDs for
+
+    bin_width : float
+        Width of each histogram bin, used to normalise the resulting EMD correctly
+
+
+    Notes
+    -----
+
+    As detailed [scipy.stats.wasserstein_distance](https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.wasserstein_distance.html), 
+    an equivalent definition of EMD based on cumulative distribution functions is:
+
+    $$
+    EMD(u,v) = \int_{-\infty}{+\infty}|U - V|
+    $$
+    where $u,v$ are probability distributions and $U, V$ are their respectives cumulative distributions. As such, the EMD between 
+    two GRID representations $(G,H)$ will be
+    $$
+    EMD(G, H) = \sum_{j=1}^n \left( \frac{\sum_i | G_{j,i} - H_{j,i} |}{max(U)} \times w \right) / n
+    $$
+    where the sum over $i$ is for all bins in a given GRID shell (to the same cutoff) and $w$ is the width of each bin. The 
+    division by $max(U)$ is needed in cases where $u$ and $v$ are not normalised to sum to 1, for instance when $w < 1$.
+    $j$ is the sum across all GRID shells $n$, meaning that the overall EMD is the mean of each shell EMD (currently, this
+    may change in future).
+
+    """
+
+    output = np.zeros(cumsum_grid_array.shape[0])
+    for j in nb.prange(i,cumsum_grid_array.shape[0]):
+        output[j] = np.mean( np.sum(np.abs(cumsum_grid_array[i] - cumsum_grid_array[j]), axis=-1) / np.max(cumsum_grid_array[i]) * bin_width)
+    return output
+
+def super_fast_EMD_matrix(grids):
+    """
+    Efficient parallelised method to compute the matrix of EMD for a collection of GRID representations.
+
+    Warning - for large lists of GRIDS, this can be very memory (and compute) intensive!
+
+    Notes
+    -----
+
+    - This method requires all GRIDs to be the same shape so that they can be converted into a 3-dimensional NumPy array.
+    - Checks are made for normalisation
+    """
+
+    shapes = np.array([i.shape for i in grids])
+    assert np.all(np.isclose(shapes, shapes[0])), "All GRIDs must have the same dimensions"
+
+    grid_input = np.array(grids)
+
+    # Perform cumulative summation for fast EMD calculation
+    grid_cumsum = np.cumsum(grid_input, axis=-1)
+
+    assert np.all(np.isclose(grid_cumsum[0,0,-1], grid_cumsum[:,:,-1])), "All GRIDs must be normalised to the same area. "
+
+    output = np.zeros((grid_cumsum.shape[0], grid_cumsum.shape[0]))
+
+    # Do the time-consuming calculation in parallel (with progress bar)
+    for i in tqdm(range(grid_cumsum.shape[0]), mininterval=5):
+        output[i] = super_row_emd(grid_cumsum, i)
+    return output
+
 def rdf_emd_similarity(rdf_a, rdf_b, max_distance=10, method='fast'):
     """
     Compute EMD similarity between two RDF distributions (1D or 2D)

@@ -26,10 +26,10 @@ from sklearn.preprocessing import StandardScaler
 from sklearn import metrics
 from pyemd import emd
 
-from .data_explore import rdf_trim, rdf_flatten, batch_shell_similarity, batch_lattice
+from .data_explore import rdf_trim, rdf_flatten, batch_lattice
 from .composition import composition_one_hot, bonding_matrix
 from .visualization import calc_obs_vs_pred, binarize_output, n_best_middle_worst
-from .extendRDF import shell_similarity
+#from .extendRDF import shell_similarity
 from .data_io import rdf_read, rdf_read_parallel, shell_similarity_read
 from .misc import int_or_str
 
@@ -361,7 +361,7 @@ if __name__ == '__main__':
     # otherwise the input features are calculated and comibined
     if task != 'random_guess':
         all_features = [
-            'extended_rdf', 'shell_similarity', 
+            'extended_rdf', #'shell_similarity', 
             'lattice_abc', 'lattice_matrix',
             'formula', 'composition',
             'distance_matrix',
@@ -382,12 +382,12 @@ if __name__ == '__main__':
             # make all the rdf same length for machine learning input
             all_rdf = rdf_trim(all_rdf, trim=trim)
             X_data = rdf_flatten(all_rdf)
-        if 'shell_similarity' in input_features:
-            all_shell_simi = shell_similarity_read(data, rdf_dir)
-            if X_data is None:
-                X_data = all_shell_simi
-            else: 
-                X_data = np.hstack((X_data, all_shell_simi))
+        # if 'shell_similarity' in input_features:
+        #     all_shell_simi = shell_similarity_read(data, rdf_dir)
+        #     if X_data is None:
+        #         X_data = all_shell_simi
+        #     else: 
+        #         X_data = np.hstack((X_data, all_shell_simi))
         if 'lattice_abc' in input_features:
             all_lattice = batch_lattice(data, method='abc')
             if X_data is None:

@@ -25,30 +25,30 @@ try:
 except:
     print('matminer is not installed, cannot calculate structural complexity')
 
-from .extendRDF import rdf_histo, rdf_kde, get_rdf_and_atoms, shell_similarity
+from .extendRDF import rdf_histo, rdf_kde, get_rdf_and_atoms#, shell_similarity
 from .composition import elements_count, bonding_type
 from .otherRDFs import origin_rdf_histo
 
 
-def batch_shell_similarity(all_rdf, method='append'):
-    '''
-    Calculate shell similarity for multiple RDFs
+# def batch_shell_similarity(all_rdf, method='append'):
+#     '''
+#     Calculate shell similarity for multiple RDFs
     
-    Args:
-        all_rdf: multiple RDFs with the same length
-        method: how shell similarity is used in the X input
-            append: append the similarity values after rdfs
-            only: only use similarity values as the X input
-    Return:
-        RDF with shell similarity or similarity only
-    '''
-    rdf_shell_simi = []
-    for rdf in all_rdf:
-        if method == 'append':
-            rdf_shell_simi.append(np.append(rdf, shell_similarity(rdf)))
-        elif method == 'only':
-            rdf_shell_simi.append(shell_similarity(rdf))
-    return np.stack(rdf_shell_simi)
+#     Args:
+#         all_rdf: multiple RDFs with the same length
+#         method: how shell similarity is used in the X input
+#             append: append the similarity values after rdfs
+#             only: only use similarity values as the X input
+#     Return:
+#         RDF with shell similarity or similarity only
+#     '''
+#     rdf_shell_simi = []
+#     for rdf in all_rdf:
+#         if method == 'append':
+#             rdf_shell_simi.append(np.append(rdf, shell_similarity(rdf)))
+#         elif method == 'only':
+#             rdf_shell_simi.append(shell_similarity(rdf))
+#     return np.stack(rdf_shell_simi)
 
 
 def rdf_trim(all_rdf, trim='minimum'):
