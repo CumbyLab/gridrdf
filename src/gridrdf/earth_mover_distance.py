@@ -560,7 +560,7 @@ def super_fast_EMD_matrix(grids):
 
     # Do the time-consuming calculation in parallel (with progress bar)
     for i in tqdm(range(grid_cumsum.shape[0]), mininterval=5):
-        output[i] = super_row_emd(grid_cumsum, i)
+        output[i] = _emd_cumsum_row(grid_cumsum, i)
     return output
 
 def rdf_emd_similarity(rdf_a, rdf_b, max_distance=10, method='fast'):
