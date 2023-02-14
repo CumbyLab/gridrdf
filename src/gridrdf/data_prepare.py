@@ -201,7 +201,7 @@ def perovskite_different_lattice(outfile=None):
             
 def batch_rdf(data,
               max_dist=10,
-              bin_size=0.1,
+              bin_width=0.1,
               method='bin',
               normalize=True, 
               gzip_file=False,
@@ -234,10 +234,10 @@ def batch_rdf(data,
                                         max_dist=max_dist)
         
         if method == 'kde':
-            rdf_bin = rdf_kde(rdf_atoms=rdf_atoms, max_dist=max_dist, bin_size=bin_size)
+            rdf_bin = rdf_kde(rdf_atoms=rdf_atoms, max_dist=max_dist, bin_width=bin_width)
         elif method == 'bin':
             # this should be replaced by the general kde uniform method in the future
-            rdf_bin = rdf_histo(rdf_atoms=rdf_atoms, max_dist=max_dist, bin_size=bin_size)
+            rdf_bin = rdf_histo(rdf_atoms=rdf_atoms, max_dist=max_dist, bin_width=bin_width)
             if normalize:
                 rdf_bin = rdf_bin / len(struct)
         else:
