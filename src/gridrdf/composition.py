@@ -10,16 +10,21 @@ from pymatgen.core.periodic_table import Element
 from collections import Counter
 from itertools import combinations
 
+from scipy.sparse import coo_matrix
+
+import warnings
+
 try:
     from pymatgen import Structure
 except ImportError:
     from pymatgen.core.structure import Structure
 from pymatgen.analysis.local_env import CrystalNN
 
+from . import extendRDF
 
 def element_indice():
     '''
-    type of element indice used 
+    Generate 
     '''
     global modified_pettifor, pettifor, periodic_table, periodic_table_78
 
@@ -78,6 +83,8 @@ def element_indice():
                           'Hf', 'Ta', 'W',  'Re', 'Os', 'Ir', 'Pt', 'Au', 'Hg', 'Tl', 'Pb', 'Bi', 
     ]
 
+# Always run element_indice to generate ordered species lists
+element_indice()
 
 def composition_one_hot(data, method='percentage', index='z_number_78', only_elem_present=False):
     '''
@@ -205,12 +212,12 @@ def elements_count(data):
                 elem_matrix[elem][elem2] = elem_matrix[elem2][elem]
 
     elem_histo = {elem:count for elem,count in elem_histo.items() if count != 0}
-    elem_histo = DataFrame([elem_histo])
+    elem_histo = pd.DataFrame([elem_histo])
     elem_histo = elem_histo[(elem_histo != 0)]
     elem_histo.T.to_csv('elem_histo', sep=' ')
 
     #
-    elem_matrix = DataFrame.from_dict(elem_matrix)
+    elem_matrix = pd.DataFrame.from_dict(elem_matrix)
     # remove columns and rows with all zero
     elem_matrix = elem_matrix.loc[:, (elem_matrix != 0).any(axis=0)] # column
     elem_matrix = elem_matrix[(elem_matrix != 0).any(axis=1)]   # row
@@ -354,10 +361,10 @@ def bonding_type(structure):
     nn = CrystalNN()
     bond_elem_list = []
     bond_num_list = []
-    for i in list(range(len(struct))):
-        site1 = struct[i].species_string
-        num1 = struct[i].specie.number
-        for neigh in nn.get_nn_info(struct, i):
+    for i in list(range(len(structure))):
+        site1 = structure[i].species_string
+        num1 = structure[i].specie.number
+        for neigh in nn.get_nn_info(structure, i):
             bond_elem_list.append(' '.join(sorted([site1, neigh['site'].species_string])))
             bond_num_list.append(' '.join(list(map(str, sorted([num1, neigh['site'].specie.number])))))
 
@@ -395,3 +402,81 @@ def bonding_matrix(data):
     # HERE NEED TO DELETE ZERO ROW/COLUMN AND THEN FLATTEN
     return np.stack(all_bond_matrix)
 
+
+
+def composition_hist(structure, 
+                     neighbours,
+                     order='Z',
+                     normed=True,
+                     rdf_type = 'grid',
+                     return_sparse = False,
+                     ):
+    """
+    Generate a 2D GRID-like histogram for composition, with composition grouped by increasing neighbour distance.
+
+    Parameters
+    ----------
+
+    structure : PyMatGen Structure
+    neighbours : list
+        List of neighbours generated using `extendRDF.get_pairwise_distances`
+    order : str
+        Order to place elements in final representation. One of:
+            - 'Z' (atomic number order)
+            - 'pettifor' (pettifor order)
+            - 'modified_pettifor' (modified and updated pettifor)
+
+    normed : bool, default True
+        Whether to normalise the composition of each shell to 1
+    rdf_type : str, default 'grid'
+        Whether to return a 1D histogram ('simple') or 2D histogram ('grid')
+        of composition
+    return_sparse: bool, default False
+        If True, return a scipy.sparse.coo_matrix instead of NumPy array to save memory.
+    """
+
+    assert rdf_type == 'simple' or rdf_type == 'grid', "rdf_type must be one of `simple` (1D) or `grid` (2D). "
+
+    # Set up vectors for composition and shell_number
+    # Only treat 103 elements currently (using 0 for unknown elements)
+    max_elements = 103
+    max_shell = max([len(i) for i in neighbours])
+
+    # First compute a 2D GRID-like representation of composition
+    comp_grid = np.zeros((max_shell, max_elements+1))
+
+    for nsite, site in enumerate(neighbours):
+        for nshell, shell in enumerate(site):
+            elem_fracs = shell.species.get_el_amt_dict()
+            for elem in shell.species.elements:
+                # Get index based on Z
+                elem_index = elem.Z
+                # Substitute Z for non-standard elements, which have a nonsense Z otherwise
+                if elem.Z > max_elements or elem.Z < 0:
+                    if elem.symbol == 'D':
+                        elem_index = 2
+                    elif elem.symbol == 'M':
+                        # Some ICSD entries contain 'M'...?
+                        elem_index = 0
+                    else:
+                        # Unknown element
+                        warnings.warn(f"Unknown element type {elem.symbol} - assigning to column 0", UserWarning)
+                        elem_index = 0
+                    
+                # Overall value is occupancy of site * fraction of element on neighbouring site
+                # If all sites are fully occupied, this will just add 1
+                comp_grid[nshell, elem_index] += elem_fracs[elem.symbol] * structure[nsite].species.num_atoms
+
+    if rdf_type == 'simple':
+        comp_grid = comp_grid.sum(axis=0)
+
+    if normed:
+        if rdf_type == 'grid':
+            comp_grid = comp_grid / np.tile(comp_grid.sum(axis=-1).reshape(-1,1), comp_grid.shape[-1])
+        elif rdf_type == 'simple':
+            comp_grid = comp_grid / comp_grid.sum()
+
+    if return_sparse:
+        comp_grid = coo_matrix(comp_grid)
+
+    return comp_grid
