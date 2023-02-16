@@ -17,7 +17,9 @@ import numpy as np
 import argparse
 import logging
 import itertools
+from tqdm import tqdm
 from scipy.stats import gaussian_kde
+from scipy.sparse import coo_matrix
 
 # Handle pymatgen v2022 changes
 try:
@@ -174,13 +176,15 @@ def get_pairwise_distances(structure,
 
     assert (num_neighbours is None) ^ (cutoff is None), "You must specify only one of num_neighbours or cutoff."
 
+    initial_cutoff = cutoff
+
     if num_neighbours:
         cutoff = _estimate_cutoff(structure, num_neighbours)
     
     complete = False
     while not complete:
         neighbours = _sorted_neighbours(structure, cutoff)
-        if cutoff:
+        if initial_cutoff:
             complete = True
         elif num_neighbours:
             min_count = min([len(i) for i in neighbours])
@@ -334,6 +338,7 @@ def calculate_rdf(structure,
                   smearing = 0.1,
                   normed = True,
                   broadening_method = 'convolve',
+                  return_sparse = False,
                   ):
     """
     Return the GRID (2D) RDF from a list of neighbours
@@ -366,6 +371,8 @@ def calculate_rdf(structure,
         `kde`      : construct a KernelDensityEstimate based on the distances, and then 
                      compute the magnitude of this KDE on a fine distribution before binning the
                      results. 
+    return_sparse : bool, default False
+        If True, return a scipy coo_matrix format to save memory
 
     Notes
     -----
@@ -434,6 +441,9 @@ def calculate_rdf(structure,
                                     )[0]
     else:
         raise ValueError(f"Unknown RDF type {rdf_type}")
+
+    if return_sparse:
+        binned_dists = coo_matrix(binned_dists)
 
     return binned_dists
 
@@ -512,7 +522,7 @@ def rdf_histo(rdf_atoms, max_dist=10, bin_width=0.1):
 def find_all_neighbours(structure_list,
                         num_neighbours=None,
                         cutoff=None,
-                        return_limits = False,
+                        return_limits = True,
                         dryrun = False):
     """
     Return neighbour lists for an iterable list of structures.
@@ -530,7 +540,7 @@ def find_all_neighbours(structure_list,
 
     NOTE: Only one of num_neighbours or cutoff must be supplied
 
-    return_limits : bool, default False
+    return_limits : bool, default True
         If True, return either [min_neigh, max_neigh] or [min_cutoff, max_cutoff] depending on which parameter
         was supplied.
 
@@ -543,6 +553,12 @@ def find_all_neighbours(structure_list,
     neighbours : nested lists of neighbours
         list of pymatgen PeriodicSite objects in distance order, of format
         [[site_0_neighbours], [site_1_neigbours], ...]
+
+    limits : tuple(min_limit, max_limit), optional
+        If return_limits is True, the minimum and maximum limits are returned. The numbers depend on whether
+        `cutoff` or `num_neighbours` was specified; for `cutoff` the smallest and largest number of neighbours
+        are returned, while if `num_neighbours` was specified `limits` contains the minimum and maximum cutoff 
+        distances.
 
     """
 
@@ -561,13 +577,20 @@ def find_all_neighbours(structure_list,
         warnings.warn(f'The estimated number of neighbours ranges from {min_neig} to {max_neig}.', stacklevel=2)
 
     if dryrun:
-        return None
+        if return_limits:
+            if num_neighbours:
+                return None, (min_cut, max_cut)
+            elif cutoff:
+                return None, (min_neig, max_neig)
+        else:
+            return None
+
 
     neighbours = []
-    neigh_range = [1E4,0]
+    neigh_range = [1E7,0]
     cutoff_range = [1E7,0]
 
-    for struc in structure_list:
+    for struc in tqdm(structure_list, mininterval=5):
         neighbours.append(get_pairwise_distances(struc, num_neighbours=num_neighbours, cutoff=cutoff))
         if cutoff:
             current_neighbour_count = max([len(i) for i in neighbours[-1]])
@@ -582,8 +605,10 @@ def find_all_neighbours(structure_list,
             elif max_dist > cutoff_range[1]:
                 cutoff_range[1] = max_dist
 
-    #warnings.warn(f'Cutoff ranges from {cutoff_range[0]:.4f} to {cutoff_range[1]:.4f}.', stacklevel=2)
-    #warnings.warn(f'Number of neighbours ranges from {neigh_range[0]} to {neigh_range[1]}.', stacklevel=2)
+    if num_neighbours:
+        warnings.warn(f'Computed cutoff ranges from {cutoff_range[0]:.4f} to {cutoff_range[1]:.4f}.', stacklevel=2)
+    elif cutoff:
+        warnings.warn(f'Computed number of neighbours ranges from {neigh_range[0]} to {neigh_range[1]}.', stacklevel=2)
     
     if return_limits:
         if num_neighbours:
