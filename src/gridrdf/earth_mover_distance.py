@@ -533,6 +533,25 @@ def _emd_cumsum_row(cumsum_grid_array, index, bin_width):
         output[j] = np.mean( np.sum(np.abs(cumsum_grid_array[index] - cumsum_grid_array[j]), axis=-1) / np.max(cumsum_grid_array[index]) * bin_width)
     return output
 
+@nb.njit()
+def _flattened_EMD_cumsum(cumulative_grid_flat1, cumulative_grid_flat2, shape, bin_width):
+    grid1 = cumulative_grid_flat1.reshape(shape)
+    grid2 = cumulative_grid_flat2.reshape(shape)
+
+    return np.mean( np.sum(np.abs(grid1 - grid2), axis=-1) / np.max(grid1) * bin_width)
+
+
+@nb.njit()
+def _EMD_cumsum(cumulative_grid1, cumulative_grid2, bin_width):
+    """
+    Return EMD between two cumulative GRID (2D) representations.
+
+    For mathematical explanation see `_EMD_cumsum_row`
+    """
+    
+    return np.mean( np.sum(np.abs(cumulative_grid1 - cumulative_grid2), axis=-1) / np.max(cumulative_grid1) * bin_width)
+
+
 def super_fast_EMD_matrix(grids, bin_width, results_array = None):
     """
     Efficient parallelised method to compute the matrix of EMD for a collection of GRID representations.
