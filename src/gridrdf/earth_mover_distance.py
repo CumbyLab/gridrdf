@@ -533,11 +533,23 @@ def _emd_cumsum_row(cumsum_grid_array, index, bin_width):
         output[j] = np.mean( np.sum(np.abs(cumsum_grid_array[index] - cumsum_grid_array[j]), axis=-1) / np.max(cumsum_grid_array[index]) * bin_width)
     return output
 
-def super_fast_EMD_matrix(grids, bin_width):
+def super_fast_EMD_matrix(grids, bin_width, results_array = None):
     """
     Efficient parallelised method to compute the matrix of EMD for a collection of GRID representations.
 
     Warning - for large lists of GRIDS, this can be very memory (and compute) intensive!
+
+    Parameters
+    ----------
+    grids : array-like
+        Iterable of GRID representations
+    bin_width : float
+        Width of each GRID bin for correctly normalising EMD
+    results_array : array-like, default None
+        If not None, EMD values will be stored to this array. It should
+        be square with shape (len(grids), len(grids)).
+        Can be substituted with an HDF5 file object to minimise memory consumption.
+
 
     Notes
     -----
@@ -549,18 +561,27 @@ def super_fast_EMD_matrix(grids, bin_width):
     shapes = np.array([i.shape for i in grids])
     assert np.all(np.isclose(shapes, shapes[0])), "All GRIDs must have the same dimensions"
 
-    grid_input = np.array(grids)
+    if not isinstance(grids, np.ndarray):
+        grid_input = np.array(grids)
+    else:
+        grid_input = grids
 
     # Perform cumulative summation for fast EMD calculation
     grid_cumsum = np.cumsum(grid_input, axis=-1)
 
     assert np.all(np.isclose(grid_cumsum[0,0,-1], grid_cumsum[:,:,-1])), "All GRIDs must be normalised to the same area. "
 
-    output = np.zeros((grid_cumsum.shape[0], grid_cumsum.shape[0]))
+    if results_array:
+        assert results_array.shape == (grid_input.shape[0], grid_input.shape[0])
+        output = results_array
+    else:
+        output = np.zeros((grid_cumsum.shape[0], grid_cumsum.shape[0]))
 
     # Do the time-consuming calculation in parallel (with progress bar)
     for i in tqdm(range(grid_cumsum.shape[0]), mininterval=5):
         output[i] = _emd_cumsum_row(grid_cumsum, i, bin_width)
+        # Fill in the lower diagonal (assumes we are iterating in order)
+        output[i, :i] = output[:i, i]
     return output
 
 def rdf_emd_similarity(rdf_a, rdf_b, max_distance=10, method='fast'):
