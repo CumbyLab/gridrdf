@@ -529,11 +529,11 @@ def _emd_cumsum_row(cumsum_grid_array, index, bin_width):
     """
 
     output = np.zeros(cumsum_grid_array.shape[0])
-    for j in nb.prange(i,cumsum_grid_array.shape[0]):
-        output[j] = np.mean( np.sum(np.abs(cumsum_grid_array[i] - cumsum_grid_array[j]), axis=-1) / np.max(cumsum_grid_array[i]) * bin_width)
+    for j in nb.prange(index,cumsum_grid_array.shape[0]):
+        output[j] = np.mean( np.sum(np.abs(cumsum_grid_array[index] - cumsum_grid_array[j]), axis=-1) / np.max(cumsum_grid_array[index]) * bin_width)
     return output
 
-def super_fast_EMD_matrix(grids):
+def super_fast_EMD_matrix(grids, bin_width):
     """
     Efficient parallelised method to compute the matrix of EMD for a collection of GRID representations.
 
@@ -560,7 +560,7 @@ def super_fast_EMD_matrix(grids):
 
     # Do the time-consuming calculation in parallel (with progress bar)
     for i in tqdm(range(grid_cumsum.shape[0]), mininterval=5):
-        output[i] = _emd_cumsum_row(grid_cumsum, i)
+        output[i] = _emd_cumsum_row(grid_cumsum, i, bin_width)
     return output
 
 def rdf_emd_similarity(rdf_a, rdf_b, max_distance=10, method='fast'):
