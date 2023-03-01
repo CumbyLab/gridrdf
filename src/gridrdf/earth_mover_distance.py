@@ -30,6 +30,8 @@ from pymatgen.analysis.structure_matcher import StructureMatcher
 from scipy import spatial
 from scipy.sparse import coo_matrix
 
+import warnings
+
 # Used for faster version of EMD
 import numba as nb
 
@@ -51,6 +53,7 @@ from pyemd import emd, emd_with_flow
 
 from .data_io import rdf_read, rdf_read_parallel
 from .data_explore import rdf_trim, rdf_flatten
+import gridrdf.composition
 from .composition import composition_one_hot, element_indice
 from .misc import int_or_str
 
@@ -72,15 +75,15 @@ def emd_formula_example():
     comp2 = elem_emd._gen_vector('La0.57Li0.29TiO3')
     pettifor_emd = elem_emd._EMD(comp1, comp2)
 
-    comp1_reindex = pd.DataFrame(comp1, index=modified_pettifor).reindex(index=pettifor)
-    comp2_reindex = pd.DataFrame(comp2, index=modified_pettifor).reindex(index=pettifor)
+    comp1_reindex = pd.DataFrame(comp1, index=gridrdf.composition.modified_pettifor).reindex(index=gridrdf.composition.pettifor)
+    comp2_reindex = pd.DataFrame(comp2, index=gridrdf.composition.modified_pettifor).reindex(index=gridrdf.composition.pettifor)
 
     dist_matrix = pd.read_csv('similarity_matrix.csv', index_col='ionA').values
     dist_matrix = dist_matrix.copy(order='C')
 
     em = emd_with_flow(comp1_reindex.values[:,0], comp2_reindex.values[:,0], dist_matrix)
     simi_matrix_emd = em[0]
-    emd_flow = pd.DataFrame(em[1], columns=pettifor, index=pettifor)
+    emd_flow = pd.DataFrame(em[1], columns=gridrdf.composition.pettifor, index=gridrdf.composition.pettifor)
     emd_flow.replace(0, np.nan).to_csv('emd_flow.csv')
 
 
@@ -192,6 +195,8 @@ def dist_matrix_1d(nbin=100):
     '''
     Generate distance matrix for earth mover's distance use
     '''
+
+    #dist_matrix = np.abs(np.subtract.outer(range(nbin), range(nbin)))
     dist_matrix = pd.DataFrame()
     for x in range(nbin):
         for y in range(nbin):
@@ -279,6 +284,9 @@ def nn_bulk_modulus_matrix_add(data, nn=1, simi_dir = '.', simi_matrix=['extende
         EMD distance between the nearest neighbor and baseline
         mp-id of the nearest neighbor
     '''
+
+    warnings.warn('`nn_bulk_modulus_matrix_add` is deprecated and will be removed', DeprecationWarning)
+
     # read the modulus data and convert to pandas dataframe
     # for the usage of later ground truth and mp ids
     df_mp = pd.DataFrame.from_dict(data)
@@ -420,7 +428,7 @@ def composition_similarity(baseline_id, data, index='z_number_78'):
     dist_matrix = 1 / (np.log10(1 / dist_matrix + 1))
 
     if index == 'pettifor':
-        dist_matrix = dist_matrix.reindex(columns=pettifor, index=pettifor) 
+        dist_matrix = dist_matrix.reindex(columns=gridrdf.composition.pettifor, index=gridrdf.composition.pettifor) 
     # the earth mover's distance package need order C and float64 astype('float64')
     dist_matrix = dist_matrix.values.copy(order='C')
 
@@ -463,7 +471,7 @@ def composition_similarity_matrix(data, indice=None, index='z_number_78', elem_s
     dist_matrix = 1 / (np.log10(1 / dist_matrix + 1))
 
     if index == 'pettifor':
-        dist_matrix = dist_matrix.reindex(columns=pettifor, index=pettifor) 
+        dist_matrix = dist_matrix.reindex(columns=gridrdf.composition.pettifor, index=gridrdf.composition.pettifor) 
     # the earth mover's distance package need order C and float64 astype('float64')
     dist_matrix = dist_matrix.values.copy(order='C')
     
@@ -482,7 +490,7 @@ def composition_similarity_matrix(data, indice=None, index='z_number_78', elem_s
     return compo_emd
 
 @nb.njit(parallel=True)
-def _emd_cumsum_row(cumsum_grid_array, index, bin_width):
+def _emd_cumsum_row(cumsum_grid_array, index, bin_width, weights = None):
     """Super-fast implementation of EMD with Numba support for an array of structures.
     
     WARNING: This algorithm does not do any error checking! It assumes that the input is 
@@ -502,9 +510,12 @@ def _emd_cumsum_row(cumsum_grid_array, index, bin_width):
 
     index: int
         Index of structure to calculate pairwise EMDs for
-
     bin_width : float
         Width of each histogram bin, used to normalise the resulting EMD correctly
+    weights: array-like, default None
+        Weighting to apply to each grid shell before computing the mean. If None, equal weighting (1/n_shells) 
+        will be applied.
+        The weights should be the same length as the number of GRID shells, and should sum to the number of shells (not 1).
 
 
     Notes
@@ -528,31 +539,68 @@ def _emd_cumsum_row(cumsum_grid_array, index, bin_width):
 
     """
 
+    if weights is None:
+        shell_weights = np.ones(cumsum_grid_array.shape[1])
+    else:
+        # Avoid numba type errors by simply multiplying ones by weights (also checks array sizes)
+        shell_weights = np.ones(cumsum_grid_array.shape[1]) * weights
+
     output = np.zeros(cumsum_grid_array.shape[0])
     for j in nb.prange(index,cumsum_grid_array.shape[0]):
-        output[j] = np.mean( np.sum(np.abs(cumsum_grid_array[index] - cumsum_grid_array[j]), axis=-1) / np.max(cumsum_grid_array[index]) * bin_width)
+        output[j] = np.mean( shell_weights * np.sum(np.abs(cumsum_grid_array[index] - cumsum_grid_array[j]), axis=-1) / np.max(cumsum_grid_array[index]) * bin_width)
+        #output[j] = np.sum(shell_weights)
     return output
 
 @nb.njit()
-def _flattened_EMD_cumsum(cumulative_grid_flat1, cumulative_grid_flat2, shape, bin_width):
-    grid1 = cumulative_grid_flat1.reshape(shape)
-    grid2 = cumulative_grid_flat2.reshape(shape)
-
-    return np.mean( np.sum(np.abs(grid1 - grid2), axis=-1) / np.max(grid1) * bin_width)
-
-
-@nb.njit()
-def _EMD_cumsum(cumulative_grid1, cumulative_grid2, bin_width):
+def _EMD_cumsum(cumulative_grid1, cumulative_grid2, bin_width, weights=None):
     """
     Return EMD between two cumulative GRID (2D) representations.
 
+    Parameters
+    ----------
+
+    cumulative_grid1, cumulative_grid2: array-like
+        2D arrays containing cumulative distribution values with which to calculate Earth Mover's Distance
+    bin_width: float
+        Width of each bin in order to normalise the EMD correctly
+    weights: array-like, default None
+        Weighting to apply to each grid shell before computing the mean. If None, equal weighting (1/n_shells) 
+        will be applied.
+        The weights should be the same length as the number of GRID shells, and should sum to 1.
+
+    Returns
+    -------
+
+    EMD : float
+        Earth mover distance between two GRID distributions
+
+    Notes
+    -----
+
     For mathematical explanation see `_EMD_cumsum_row`
+
     """
     
-    return np.mean( np.sum(np.abs(cumulative_grid1 - cumulative_grid2), axis=-1) / np.max(cumulative_grid1) * bin_width)
+    if weights is None:
+        weights = np.ones(cumulative_grid1.shape[0])
+    return np.mean( weights * np.sum(np.abs(cumulative_grid1 - cumulative_grid2), axis=-1) / np.max(cumulative_grid1) * bin_width)
 
+@nb.njit()
+def _flattened_EMD_cumsum(cumulative_grid_flat1, cumulative_grid_flat2, shape, bin_width, weights=None):
+    """
+    Compute EMD between two flattened GRID distributions.
+    """
 
-def super_fast_EMD_matrix(grids, bin_width, results_array = None):
+    grid1 = cumulative_grid_flat1.reshape(shape)
+    grid2 = cumulative_grid_flat2.reshape(shape)
+
+    return _EMD_cumsum(grid1, grid2, bin_width, weights)
+
+def super_fast_EMD_matrix(grids,
+                          bin_width,
+                          weighting='constant',
+                          weighting_kwargs={'n':0.0},
+                          results_array = None,):
     """
     Efficient parallelised method to compute the matrix of EMD for a collection of GRID representations.
 
@@ -564,6 +612,21 @@ def super_fast_EMD_matrix(grids, bin_width, results_array = None):
         Iterable of GRID representations
     bin_width : float
         Width of each GRID bin for correctly normalising EMD
+    weighting : str or function
+        Weighting to apply to each grid shell when computing the overall EMD, allowing
+        biasing towards short- or long-range similarity. A string argument will use 
+        a pre-defined weighting function, or alternatively a callable can be provided in
+        order to compute weightings. If callable, the function should take the number of 
+        shells as input and return an array of values.
+        Note that weights should be normalised to sum to the number
+        of GRID shells (not 1).
+        In-built options:
+            'constant': equal weighting to all GRID shells
+            'power' : weighting of shell x is 1/x**n (normalised over all shells)
+        Default : 'constant' (equal weighting to bins)
+    weighting_kwargs : dict
+        Kwargs to use for computing weighting, either as parameters to in-built 
+        functions or to be passed direct to a weighting callable.
     results_array : array-like, default None
         If not None, EMD values will be stored to this array. It should
         be square with shape (len(grids), len(grids)).
@@ -579,6 +642,19 @@ def super_fast_EMD_matrix(grids, bin_width, results_array = None):
 
     shapes = np.array([i.shape for i in grids])
     assert np.all(np.isclose(shapes, shapes[0])), "All GRIDs must have the same dimensions"
+
+    if weighting == 'constant':
+        # Use a constant weighting
+        weights = np.ones(grids[0].shape[0])
+    elif weighting == 'power':
+        # Use x**(-n)
+        assert 'n' in weighting_kwargs, "weighting_kwargs must contain `n` when weighting==power"
+        power_series = np.power(np.arange(1, grids[0].shape[0]+1), -weighting_kwargs['n'])
+        # Normalise the weights to n_grid_shells
+        weights = power_series * grids[0].shape[0] / power_series.sum()
+    elif callable(weighting):
+        weights = weighting(grids[0].shape[0], **weighting_kwargs)
+
 
     if not isinstance(grids, np.ndarray):
         grid_input = np.array(grids)
@@ -598,7 +674,7 @@ def super_fast_EMD_matrix(grids, bin_width, results_array = None):
 
     # Do the time-consuming calculation in parallel (with progress bar)
     for i in tqdm(range(grid_cumsum.shape[0]), mininterval=5):
-        output[i] = _emd_cumsum_row(grid_cumsum, i, bin_width)
+        output[i] = _emd_cumsum_row(grid_cumsum, i, bin_width, weights=weights)
         # Fill in the lower diagonal (assumes we are iterating in order)
         output[i, :i] = output[:i, i]
     return output
@@ -785,6 +861,9 @@ def rdf_similarity_matrix_old(data, all_rdf, order=None, method='emd'):
         a pandas dataframe with all pairwise distance
         for multiple shells rdf the distance is the mean value of all shells
     '''
+
+    warnings.warn("`rdf_similarity_matrix_old` is deprecated, and will be removed in a future release.", DeprecationWarning)
+
     # used for wasserstein distance
     emd_bins = np.linspace(0, 10, 101)
 
@@ -981,7 +1060,7 @@ if __name__ == '__main__':
         else:
             all_rdf = rdf_read(data, rdf_dir)
         baseline_rdf = np.loadtxt(rdf_dir + '/' + baseline_id, delimiter=' ')
-        rdf_emd = rdf_similarity(baseline_rdf, all_rdf)
+        rdf_emd = rdf_row_similarity(baseline_rdf, all_rdf)
         rdf_emd.to_csv(output_file + baseline_id + '_rdf_emd.csv')
 
     elif task == 'rdf_similarity_matrix':
