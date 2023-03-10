@@ -454,7 +454,7 @@ def composition_hist(structure,
                 # Substitute Z for non-standard elements, which have a nonsense Z otherwise
                 if elem.Z > max_elements or elem.Z < 0:
                     if elem.symbol == 'D':
-                        elem_index = 2
+                        elem_index = 1
                     elif elem.symbol == 'M':
                         # Some ICSD entries contain 'M'...?
                         elem_index = 0

@@ -215,7 +215,7 @@ class TestHelperFunctions(unittest.TestCase):
     def test_dist_matrix(self):
         dim = 10
         dist_mat = earth_mover_distance.dist_matrix_1d(dim)
-        self.assertEquals(dist_mat.shape, (dim,dim))
+        self.assertEqual(dist_mat.shape, (dim,dim))
 
         test_mat = np.abs(np.meshgrid(range(dim), range(dim))[0] - np.meshgrid(range(dim), range(dim))[1])
 
