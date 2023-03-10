@@ -740,79 +740,79 @@ def rdf_kde(rdf_atoms, max_dist=10, bin_width=0.1, bandwidth=0.1):
 #    return shell_dist
 
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Calculate RDF with atoms',
-                                    formatter_class=argparse.RawTextHelpFormatter)
-    parser.add_argument('--input_file', type=str, default=None,
-                        help='Input CIF containing the crystal structure')
-    parser.add_argument('--task', type=str, default='shell_similarity',
-                        help='what to be calculated: \n' +
-                            '   rdf: calculate RDF \n' +
-                            '   stack_rdf: RDF with different atomic pair \n' +
-                            '   shell_similarity: the similarity between two nearest shell \n' +
-                            '   raw_rdf: origin 1D RDF as sorted list'
-                      )
-    parser.add_argument('--output', type=str, default=None,
-                        help='Output RDF')
-    parser.add_argument('--max_dist', type=float, default=10.0,
-                        help='Cutoff distance of the RDF')
-    parser.add_argument('--trim', type=int, default=30,
-                        help='the number of shells for RDF, 0 means no trim')
+# if __name__ == '__main__':
+#     parser = argparse.ArgumentParser(description='Calculate RDF with atoms',
+#                                     formatter_class=argparse.RawTextHelpFormatter)
+#     parser.add_argument('--input_file', type=str, default=None,
+#                         help='Input CIF containing the crystal structure')
+#     parser.add_argument('--task', type=str, default='shell_similarity',
+#                         help='what to be calculated: \n' +
+#                             '   rdf: calculate RDF \n' +
+#                             '   stack_rdf: RDF with different atomic pair \n' +
+#                             '   shell_similarity: the similarity between two nearest shell \n' +
+#                             '   raw_rdf: origin 1D RDF as sorted list'
+#                       )
+#     parser.add_argument('--output', type=str, default=None,
+#                         help='Output RDF')
+#     parser.add_argument('--max_dist', type=float, default=10.0,
+#                         help='Cutoff distance of the RDF')
+#     parser.add_argument('--trim', type=int, default=30,
+#                         help='the number of shells for RDF, 0 means no trim')
 
-    args = parser.parse_args()
-    input_file = args.input_file
-    task = args.task
-    outfile = args.output
-    max_dist = args.max_dist
-    trim = args.trim
+#     args = parser.parse_args()
+#     input_file = args.input_file
+#     task = args.task
+#     outfile = args.output
+#     max_dist = args.max_dist
+#     trim = args.trim
 
-    np.set_printoptions(threshold=sys.maxsize) # print the whole array
+#     np.set_printoptions(threshold=sys.maxsize) # print the whole array
 
-    if input_file:
-        # read a structure from cif to a pymatgen structure
-        struct = Structure.from_file(filename=input_file, primitive=True)
-    else:
-        # if a input structure is not provide, the code is in test mode
-        # and nacl structure will be used for test propose
-        nacl = Structure.from_spacegroup('Fm-3m', Lattice.cubic(5.6), 
-                                        ['Na', 'Cl'], [[0.5, 0.5, 0.5], [0, 0, 0]])
-        struct = nacl.get_primitive_structure()
+#     if input_file:
+#         # read a structure from cif to a pymatgen structure
+#         struct = Structure.from_file(filename=input_file, primitive=True)
+#     else:
+#         # if a input structure is not provide, the code is in test mode
+#         # and nacl structure will be used for test propose
+#         nacl = Structure.from_spacegroup('Fm-3m', Lattice.cubic(5.6), 
+#                                         ['Na', 'Cl'], [[0.5, 0.5, 0.5], [0, 0, 0]])
+#         struct = nacl.get_primitive_structure()
     
-    # The 'prim_cell_list' is used with the 'extend_structure' function, when the function
-    # is deprecated, this variable is kept maybe useful in the future
-    prim_cell_list = list(range(len(struct)))
+#     # The 'prim_cell_list' is used with the 'extend_structure' function, when the function
+#     # is deprecated, this variable is kept maybe useful in the future
+#     prim_cell_list = list(range(len(struct)))
 
-    if task == 'rdf':
-        rdf_atoms = get_rdf_and_atoms(structure=struct, prim_cell_list=prim_cell_list, 
-                                        max_dist=max_dist)
-        rdf_bin = rdf_histo(rdf_atoms=rdf_atoms, max_dist=max_dist, bin_width=0.1)
-        if outfile:
-            np.savetxt(outfile, rdf_bin.transpose(), delimiter=' ',fmt='%i')
+#     if task == 'rdf':
+#         rdf_atoms = get_rdf_and_atoms(structure=struct, prim_cell_list=prim_cell_list, 
+#                                         max_dist=max_dist)
+#         rdf_bin = rdf_histo(rdf_atoms=rdf_atoms, max_dist=max_dist, bin_width=0.1)
+#         if outfile:
+#             np.savetxt(outfile, rdf_bin.transpose(), delimiter=' ',fmt='%i')
     
-    elif task == 'stack_rdf':
-        rdf_atoms = get_rdf_and_atoms(structure=struct, prim_cell_list=prim_cell_list, 
-                                        max_dist=max_dist)
-        rdf_bin, atom_pairs = rdf_stack_histo(rdf_atoms=rdf_atoms, structure=struct, 
-                                            max_dist=max_dist, bin_width=0.1)
-        if outfile:
-            print(atom_pairs)
-            # transpose the ndarray for import into the plot program
-            np.savetxt(outfile, rdf_bin.transpose(), delimiter=' ',fmt='%i')
+#     elif task == 'stack_rdf':
+#         rdf_atoms = get_rdf_and_atoms(structure=struct, prim_cell_list=prim_cell_list, 
+#                                         max_dist=max_dist)
+#         rdf_bin, atom_pairs = rdf_stack_histo(rdf_atoms=rdf_atoms, structure=struct, 
+#                                             max_dist=max_dist, bin_width=0.1)
+#         if outfile:
+#             print(atom_pairs)
+#             # transpose the ndarray for import into the plot program
+#             np.savetxt(outfile, rdf_bin.transpose(), delimiter=' ',fmt='%i')
     
-    # elif task == 'shell_similarity':
-    #     rdf_atoms = get_rdf_and_atoms(structure=struct, prim_cell_list=prim_cell_list, 
-    #                                     max_dist=max_dist)
-    #     rdf_bin = rdf_histo(rdf_atoms=rdf_atoms, max_dist=max_dist, bin_width=0.1)
-    #     if trim != 0:
-    #         rdf_bin = rdf_bin[:trim]
+#     # elif task == 'shell_similarity':
+#     #     rdf_atoms = get_rdf_and_atoms(structure=struct, prim_cell_list=prim_cell_list, 
+#     #                                     max_dist=max_dist)
+#     #     rdf_bin = rdf_histo(rdf_atoms=rdf_atoms, max_dist=max_dist, bin_width=0.1)
+#     #     if trim != 0:
+#     #         rdf_bin = rdf_bin[:trim]
 
-    #     shell_simi = shell_similarity(rdf_bin)
-    #     print(shell_simi)
-    #     if outfile:
-    #         np.savetxt(outfile, shell_simi, delimiter=' ', fmt='%.3f')
+#     #     shell_simi = shell_similarity(rdf_bin)
+#     #     print(shell_simi)
+#     #     if outfile:
+#     #         np.savetxt(outfile, shell_simi, delimiter=' ', fmt='%.3f')
     
-    elif task == 'raw_rdf':
-        raw_rdf = get_raw_rdf(structure=struct, prim_cell_list=prim_cell_list, max_dist=max_dist)
-    else:
-        print('This task is not supported')
+#     elif task == 'raw_rdf':
+#         raw_rdf = get_raw_rdf(structure=struct, prim_cell_list=prim_cell_list, max_dist=max_dist)
+#     else:
+#         print('This task is not supported')
 

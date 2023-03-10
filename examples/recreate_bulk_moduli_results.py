@@ -3,6 +3,9 @@ A script to re-create the bulk modulus results of the original GRID paper.
 
 WARNING: Some aspects of this script may take some time.
 
+The slowest aspect is calculating EMD dissimilarity between all pairs. Currently, computing the full EMD matrix (~12,000**2 pairs)
+takes around 30 minutes on an intel i5-8500 (3.00 GHz, 6-cores) processor, using efficient parallelisation.
+
 """
 
 __author__ = "James Cumby"
@@ -58,21 +61,22 @@ print(f"Obtained {len(data)} entries with bulk moduli.")
 GRID_location = os.path.join(results_location, 'GRIDS')
 
 # Step 2 - Prepare GRIDs
-print("Calculating GRID representations...")
+
 if os.path.exists(GRID_location):
     inp = input(f'Folder {GRID_location} already exists - do you want to overwrite its contents (y/N)? ')
 else:
     inp = 'y'
-    
+
+print("Calculating GRID representations...")    
 if len(inp) > 0 and inp.lower()[0] == 'y':
     gridrdf.data_prepare.batch_rdf(data,
                                    max_dist=10,
-                                   bin_size = 0.1,
-                                   method='kde',
+                                   bin_width = 0.1,
+                                   broadening=0.1,
                                    output_dir = GRID_location,
                                    normalize=True
                                    )
-    print("Done.")                               
+    print("Calculating Grids - Done.")                               
                          
 
 # Step 3 - Remove any structures with fewer than 100 GRID shells
@@ -103,7 +107,7 @@ all_GRID = gridrdf.data_io.rdf_read(data_subset, rdf_dir = GRID_location)
 #### WARNING - THIS MIGHT BE TIME CONSUMING! ####
 print(f"Calculating pairwise EMD similarity for {len(data_subset)} materials")
 print("This may take some time")
-similarity = gridrdf.earth_mover_distance.rdf_similarity_matrix(data_subset, all_GRID, method='emd')
+similarity = gridrdf.earth_mover_distance.rdf_similarity_matrix(all_GRID, data_subset, method='emd')
 similarity.to_csv(os.path.join(results_location, 'GRID_similarity_matrix.csv'))
 
 

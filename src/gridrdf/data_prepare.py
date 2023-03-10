@@ -21,6 +21,9 @@ import time
 import numpy as np
 import pandas as pd
 import os
+import warnings
+
+import tqdm
 from collections import Counter
 try:
     from pymatgen import Structure
@@ -33,8 +36,8 @@ except ImportError:
 
 from pymatgen.ext.matproj import MPRester
 
+from . import extendRDF
 from gridrdf.composition import elements_selection
-from gridrdf.extendRDF import rdf_histo, rdf_kde, get_rdf_and_atoms
 from gridrdf.otherRDFs import origin_rdf_histo
 from gridrdf.data_io import rdf_read, rdf_read_parallel
 
@@ -94,7 +97,7 @@ def get_ICSD_CIFs_from_MP(APIkey):
             ICSD id
             CIF of structure
     '''
-    q = MPRester(APIKey)   
+    q = MPRester(APIkey)   
     d = q.query(criteria={'icsd_ids':{'$nin': [None, []]}}, 
                 properties=['task_id', 'icsd_ids', 'cif'])
     return d
@@ -201,64 +204,92 @@ def perovskite_different_lattice(outfile=None):
             
 def batch_rdf(data,
               max_dist=10,
+              num_neighbours = 100,
               bin_width=0.1,
-              method='bin',
-              normalize=True, 
-              gzip_file=False,
+              broadening=0.1,
+              normalize=True,
               output_dir = './',
-              disk_time = 0.01
               ):
     '''
-    Read structures and output the extend RDF
+    Read structures and output the GRID representations to files
 
-    Args:
-        data: input data from Materials Project
-        max_dist: cut off distance of RDF
-        method:
-            bin: binned rdf, equal to the 'uniform' method in kde,  
-                note that the 
-            kde: use kernel density estimation to give a smooth curve
-        gzip_file: in case RDF files take too much disk space, set 
-                    this to true to gzip the files (not yet test)
-    Return:
+    Parameters
+    ----------
 
+    data: iterable
+        List of dicts containing (as a minimum) the 'task_id' and 'cif' keys. Intended to 
+        be generated from Materials Project.
+    max_dist: float, optional
+        Maximum distance to compute shells to. Alternatively, specify "num_neighbours" directly 
+        to avoid truncating shells later.
+    num_neighbours : int, optional
+        Number of nearest neighbours to consider in RDF calculation (alternatively, specify max_dist).
+    broadening : float, default 0.1
+        Gaussian broadening to apply to RDF representation. If 0, histogram will be 
+        created without broadening.
+        For more control over the broadening process, see `extendRDF.calculate_RDF`.
+    normalize : Bool, default True
+        Whether to normalize the resulting histogram area.
+
+        
+    Notes
+    -----
+
+    If both max_dist and num_neighbours are specified, GRID will be calculated on the basis of 
+    num_neighbours.
     '''
+
+    structures = []
+    # First, generate PyMatGen objects from CIF representations
+    for d in data:
+        structures.append(Structure.from_str(d['cif'], fmt='cif'))
+
+    orig_max_dist = max_dist
+    # Determine whether to use max_dist or num_neighbours
+    if num_neighbours and max_dist:
+        max_dist = None
+
+    # Generate all neighbour lists for all structures to the same cutoff
+    neighbours, cutoffs = extendRDF.find_all_neighbours(structures,
+                                               num_neighbours=num_neighbours,
+                                               cutoff=max_dist,
+                                               return_limits = True,
+                                               dryrun = False)
     
+    max_dist = max(np.round(cutoffs[1], 1), orig_max_dist)
+    if max_dist != orig_max_dist:
+        print(f"Maximum distance has been updated to {max_dist} to account for {num_neighbours} neighbours")
+
+
+    rdf_results = []
+
+    # Compute RDF representation
+    for i, struct in tqdm.tqdm(enumerate(structures)):
+        rdf_results.append(extendRDF.calculate_rdf(struct,
+                                                   neighbours[i],
+                                                   rdf_type='grid',
+                                                   max_dist=max_dist,
+                                                   bin_width=bin_width,
+                                                   smearing = broadening,
+                                                   normed = normalize,
+                                                   broadening_method = 'convolve',
+                                                   return_sparse = False)
+                            )
+
     if not os.path.isdir(output_dir):
         os.mkdir(output_dir)
-    
-    for d in data:
-        struct = Structure.from_str(d['cif'], fmt='cif')
-        prim_cell_list = list(range(len(struct)))
-        rdf_atoms = get_rdf_and_atoms(structure=struct, prim_cell_list=prim_cell_list, 
-                                        max_dist=max_dist)
-        
-        if method == 'kde':
-            rdf_bin = rdf_kde(rdf_atoms=rdf_atoms, max_dist=max_dist, bin_width=bin_width)
-        elif method == 'bin':
-            # this should be replaced by the general kde uniform method in the future
-            rdf_bin = rdf_histo(rdf_atoms=rdf_atoms, max_dist=max_dist, bin_width=bin_width)
-            if normalize:
-                rdf_bin = rdf_bin / len(struct)
-        else:
-            print('This method is not supported in RDF calculation ')
 
-        outfile = os.path.normpath(os.path.join(output_dir, d['task_id']))
-        if gzip_file:
-            with gzip.open(outfile+'.gz', 'w') as f:
-                # not yet test, need test before use
-                f.write(rdf_bin.tostring())
-        else:
-            np.savetxt(outfile, rdf_bin, delimiter=' ', fmt='%.6f')
-        time.sleep(disk_time)
-    return
+    # Save GRIDs to individual output files.
+    warnings.warn("GRIDs will be saved in a different format in a future version.", FutureWarning)
+    for i, GRID in enumerate(rdf_results):
+        outfile = os.path.normpath(os.path.join(output_dir, data[i]['task_id']))
+        np.savetxt(outfile, GRID, delimiter=' ', fmt='%.6f')
     
 def trim_rdf_bins(data,
                   all_rdf,
                   number_of_shells,
-                  write_to_disk = False,
+                  write_to_disk = True,
                   output_dir = './',
-                  gzip_file=False,
                   disk_time = 0.01,
                   ):
     """ Truncate all RDFs to the largest number of bins possible in the group. 
@@ -305,12 +336,8 @@ def trim_rdf_bins(data,
             
             if write_to_disk:
                 outfile = os.path.normpath(os.path.join(output_dir, d['task_id']))
-                if gzip_file:
-                    with gzip.open(outfile+'.gz', 'w') as f:
-                        # not yet test, need test before use
-                        f.write(all_rdf[i].tostring())
-                else:
-                    np.savetxt(outfile, all_rdf[i][:number_of_shells], delimiter=' ', fmt='%.3f')
+
+                np.savetxt(outfile, all_rdf[i][:number_of_shells], delimiter=' ', fmt='%.6f')
                 time.sleep(disk_time)
             
                 
@@ -462,9 +489,11 @@ def main(data_source = 'MP_modulus.json',
                     data.remove(d)
                     
         elif task == 'grid_rdf_bin':
-            batch_rdf(data, max_dist=max_dist, method='bin', output_dir = output_dir)
+            # Compute un-broadened GRID
+            batch_rdf(data, max_dist=max_dist, num_neighbours = num_grid_shells, broadening=0.0, output_dir = output_dir)
         elif task == 'grid_rdf_kde':
-            batch_rdf(data, max_dist=max_dist, method='kde', output_dir = output_dir)
+            #Compute 0.1Ang broadened GRID
+            batch_rdf(data, max_dist=max_dist, num_neighbours = num_grid_shells, broadening=0.1, output_dir = output_dir)
         elif task == 'original_rdf':
             origin_rdf_histo(data, max_dist=max_dist, output_dir = output_dir)
 

@@ -766,52 +766,70 @@ def rdf_row_similarity(baseline_rdf, all_rdf, max_distance = 10):
     return rdf_emd
 
 
-def rdf_similarity_matrix(data,
-                          all_rdf,
+def rdf_similarity_matrix(all_rdf,
+                          data=None,
                           indice=None,
                           method='emd',
                           max_distance = 10,
                           ):
     '''
-    Calculate the earth mover's distance between all RDF pairs in a large dataset
-    Scipy wassertein is used
-    Using Guassian smearing for rdf
+    Calculate the earth mover's distance between all RDF pairs, returning a square matrix.
 
-    Args:
-        data: data from json
-        all_rdf:
-        indice:start and end of the index of the dataset, this parameter is useful when 
-            the dataset is large, and the calculations of the whole matrix must be splitted
-            into different tasks
-    Return:
-        a pandas dataframe with all pairwise distance
-        for multiple shells rdf the distance is the mean value of all shells
+    Parameters
+    ----------
+
+    all_rdf : array-like
+        Iterable of RDF representations to use for RDF calculation
+    data: iterable of dicts, optional
+        Iterable the same length as all_rdf, containing the key `task_id` to be used to
+        label the resulting DataFrame.
+
+    Returns
+    -------
+
+    dissimilarity : DataFrame
+        DataFrame containing pairwise dissimilarity between RDF representations.
+
+    Notes
+    -----
+
+    `rdf_similarity_matrix` has changed to use `super_fast_EMD_matrix` internally, which is better
+    parallelised. More control over data storage (e.g. saving direct to a file to reduce memory) can
+    be achieved by using `super_fast_EMD_matrix` directly.
     '''
     
+    warnings.warn('`rdf_similarity` is now effectively parallelised using numba, so indice is no longer used.', SyntaxWarning)
+
     rdf_lengths = [i.shape[0] for i in all_rdf]
     assert len(set(rdf_lengths)) == 1, "All RDFs (or GRIDs) must have the same number of bins - use `data_prepare.trim_rdf_bins` first"
     
-    # used for wasserstein distance.
-    #emd_bins = np.linspace(0, max_distance, all_rdf[0].shape[-1])
-
-    # if indice is None, then loop over the whole dataset
-    if not indice:
-        indice = [0, len(data)]
+    # Compute bin_width based on max distance
+    bin_width = max_distance / rdf_lengths[0]
 
     if len(all_rdf[0].shape) == 2:
         # typically for extend RDF
         
-        ids = []
-        for i in range(indice[0], indice[1]):
-            ids.append(data[i]['task_id'])
-        df = pd.DataFrame(np.zeros((len(ids), len(ids))), index=ids, columns=ids)
-        for i1 in tqdm(range(indice[0], indice[1]), desc='similarity matrix rows', mininterval=10):
-            d1 = data[i1]
-            for i2, d2 in enumerate(data):
-                if i1 <= i2:
-                    df.loc[d1['task_id'], d2['task_id']] = rdf_emd_similarity(all_rdf[i1], all_rdf[i2], max_distance=max_distance)
-                else:
-                    df.loc[d1['task_id'], d2['task_id']] = np.nan
+        if data:
+            ids = [i['task_id'] for i in data]
+        else:
+            ids = np.arange(len(all_rdf))
+        
+        dissimilarity = super_fast_EMD_matrix(all_rdf,
+                                              bin_width,
+                                              weighting='constant',
+                                              weighting_kwargs={'n':0.0},
+                                              results_array = None,)
+        
+        df = pd.DataFrame(dissimilarity, index=ids, columns=ids)
+
+        # df = pd.DataFrame(np.zeros((len(ids), len(ids))), index=ids, columns=ids)
+        # for i1 in tqdm(range(indice[0], indice[1]), desc='similarity matrix rows', mininterval=10):
+        #     d1 = data[i1]
+        #     for i2, d2 in enumerate(data):
+        #         if i1 <= i2:
+        #             df.loc[d1['task_id'], d2['task_id']] = rdf_emd_similarity(all_rdf[i1], all_rdf[i2], max_distance=max_distance)
+        #         else:
+        #             df.loc[d1['task_id'], d2['task_id']] = np.nan
     elif len(all_rdf[0].shape) == 1:
         # typically for vanilla RDF and other 1D input
         df = pd.DataFrame([])
@@ -1068,14 +1086,9 @@ if __name__ == '__main__':
             all_rdf = rdf_read_parallel(data, rdf_dir, procs=procs)
         else:
             all_rdf = rdf_read(data, rdf_dir)
-        # trim all the rdf to same length to save time
-        rdf_len = 100
-        all_rdf = rdf_trim(all_rdf, trim=rdf_len)
-        df = rdf_similarity_matrix(data, all_rdf, indice=indice, method='emd')
-        if indice:
-            df.to_csv(output_file + str(indice[0]) + '_' + str(indice[1]) + '.csv')
-        else:
-            df.to_csv(output_file + '_whole_matrix.csv')
+
+        df = rdf_similarity_matrix(all_rdf, data, indice=indice, method='emd')
+        df.to_csv(output_file + '_whole_matrix.csv')
 
     elif task == 'composition_similarity':
         elem_vectors, elem_symbols = composition_one_hot(data)
