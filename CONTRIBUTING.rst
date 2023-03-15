@@ -270,7 +270,7 @@ on PyPI_, the following steps can be used to release a new version for
 ``gridrdf``:
 
 #. Make sure all unit tests are successful.
-#. Updated ``changelog.rst``
+#. Updated ``CHANGELOG.rst``
 #. Tag the current commit on the main branch with a release tag, e.g., ``v1.2.3``.
 #. Push the new tag to the upstream repository_, e.g., ``git push upstream v1.2.3``
 #. Clean up the ``dist`` and ``build`` folders with ``tox -e clean``
