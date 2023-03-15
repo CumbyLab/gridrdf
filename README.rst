@@ -44,10 +44,10 @@ earth mover's distance (EMD) between distributions such
 as GRID or RDF, and using the resulting dissimilarities for
 further calculations.
 
-This code accompanies the following paper, which should be cited
-if you use it for any future publications:
+This code accompanies the following paper. We appreciate if
+you could cite any use of this code or method.
 
-`Grouped Representation of Interatomic Distances as a Similarity Measure for Crystal Structures <https://doi.org/10.26434/chemrxiv-2022-9m4jh>`_
+`Grouped Representation of Interatomic Distances as a Similarity Measure for Crystal Structures <https://doi.org/10.1039/D2DD00054G>`_
 
 
 
@@ -137,11 +137,11 @@ bulk modulus  using a kNN model and EMD dissimilarity, the procedure is as follo
    
     NOTE: gridrdf currently relies on the legacy Materials Project API, so needs an old API KEY
    
-2. Calculate GRID representation for each structure (generates GRID file for each structure)
+2. Calculate GRID representation for each structure (up to a number of GRID shells) and save to files.
     .. code-block:: python
 	
-		gridrdf.data_prepare.batch_rdf(data[:2],
-									   max_dist=10,
+		gridrdf.data_prepare.batch_rdf(data,
+									   num_neighbours=100,
 									   bin_size = 0.1,
 									   method='kde',
 									   output_dir = './GRIDS',
@@ -154,24 +154,8 @@ bulk modulus  using a kNN model and EMD dissimilarity, the procedure is as follo
 	
 		python -m gridrdf.data_prepare --data_source MP_modulus.json --output_dir ../GRIDS/ --tasks grid_rdf_kde
 
-   
-3. Remove any structures with fewer than 100 GRID shells
-    .. code-block:: python
-	
-		all_GRID = gridrdf.data_io.rdf_read_parallel(data, rdf_dir = './GRIDS/')
-		for i, d in enumerate(data[:]):
-			if len(all_GRID[i]) < 100:
-				data.remove(d)
-		with open('MP_subset.json', 'w') as f:
-			json.dump(data, f, indent=1)
- 
-   or from a terminal:
-    .. code-block:: bash
-
-		python -m gridrdf.data_prepare --data_source MP_modulus.json --output_dir ./GRIDS/ --tasks subset_grid_len --output_file MP_subset.json  
-
     
-4. Filter structure with negative bulk moduli
+3. Filter structure with negative bulk moduli
 	.. code-block:: python
 	
 		for d in data:
@@ -184,7 +168,7 @@ bulk modulus  using a kNN model and EMD dissimilarity, the procedure is as follo
 		python -m gridrdf.data_prepare --data_source MP_modulus.json --output_dir ./GRIDS/ --output_file MP_subset.json --tasks subset_property --prop_filter elasticity.K_VRH 0 np.inf
 
    
-5. Filter elements with atomic number > Bi:
+4. Filter elements with atomic number > Bi:
 	.. code-block:: python
 	
 		# First, generate internal list of 78 elements (as gridrdf.composition.periodic_table_78)
@@ -194,7 +178,7 @@ bulk modulus  using a kNN model and EMD dissimilarity, the procedure is as follo
    
    NOTE: not currently implemented for command line script
     
-Steps 2-5 can be combined into a single function call (similarly through terminal script by specifying tasks in order):
+Steps 2-4 can be combined into a single function call (similarly through terminal script by specifying tasks in order):
 
 .. code-block:: python
 
@@ -220,7 +204,6 @@ Steps 2-5 can be combined into a single function call (similarly through termina
 	
 		python -m gridrdf.earth_mover_distance --input_file MP_modulus.json --rdf_dir ./GRIDS/ --output_file GRID_sim --task rdf_similarity_matrix
 
-   Note: The data can also be processed in smaller chunks using `indice` (or `--data_indice` as a script) to allow parallel-processing.
 7. Use a simplified kNN model to predict bulk modulus
 	.. code-block:: python
 	
@@ -244,7 +227,7 @@ Steps 2-5 can be combined into a single function call (similarly through termina
 Issues
 ------
 
-If you have any questions, comments or problems with the code, please feel free to post them as issues `here <https://git.ecdf.ed.ac.uk/funcmatgroup/gridrdf/-/issues>`_ 
+If you have any questions, comments or problems with the code, please feel free to post them as issues `here <https://github.com/CumbyLab/gridrdf/issues>`_ 
    
 
 
