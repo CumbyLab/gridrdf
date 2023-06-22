@@ -14,6 +14,7 @@ import sys
 import os
 import json
 import math
+from typing import Union
 import numpy as np
 import pandas as pd
 import argparse
@@ -485,7 +486,10 @@ def composition_similarity(baseline_id, data, index="z_number_78"):
 
 
 def composition_similarity_matrix(
-    data, indice=None, index="z_number_78", elem_similarity_file="similarity_matrix.csv"
+    data,
+    indice=None,
+    index="z_number_78",
+    elem_similarity: Union[pd.DataFrame, str] = "similarity_matrix.csv",
 ):
     """
     Calcalate pairwise earth mover's distance of all compositions, the composition should be
@@ -512,7 +516,10 @@ def composition_similarity_matrix(
         indice = [0, len(data)]
 
     dist = []
-    dist_matrix = pd.read_csv(elem_similarity_file, index_col="ionA")
+    if isinstance(elem_similarity, str):
+        dist_matrix = pd.read_csv(elem_similarity, index_col="ionA")
+    else:
+        dist_matrix = elem_similarity
     dist_matrix = 1 / (np.log10(1 / dist_matrix + 1))
 
     if index == "pettifor":
